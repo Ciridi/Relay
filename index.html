@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GarageLog — Car Project Organizer</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app-shell">
+<header class="topbar">
+<a class="brand" href="#/">GarageLog</a>
+<nav class="topnav" aria-label="Primary navigation">
+<button class="nav-link" data-route="projects">Projects</button>
+<button class="nav-link" data-action="export">Export</button>
+<label class="nav-link import-label">Import<input id="importInput" type="file" accept=".json,.txt,application/json,text/plain" hidden></label>
+<button class="nav-link" data-action="auth" id="authButton">Account</button>
+</nav>
+</header>
+<main id="main" tabindex="-1"></main>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+</div>
+
+<dialog id="projectDialog" class="modal">
+<form method="dialog" id="projectForm" class="modal-card">
+<button class="icon-button close-button" value="cancel" aria-label="Close">×</button>
+<p class="eyebrow">PROJECT</p><h2 id="projectDialogTitle">New project</h2>
+<input type="hidden" id="projectId">
+<div class="form-grid">
+<label class="full">Project name<input id="projectName" required maxlength="160"></label>
+<label class="full">Description<textarea id="projectDescription" rows="4" maxlength="3000"></textarea></label>
+<label>Start date<input id="projectStartDate" type="date"></label>
+<label>Project image URL<input id="projectImage" type="url" placeholder="https://"></label>
+</div>
+<div class="modal-actions">
+<button type="button" class="button danger" id="deleteProjectButton">Delete</button><span></span>
+<button type="button" class="button ghost" value="cancel">Cancel</button>
+<button type="submit" class="button primary">Save project</button>
+</div>
+</form>
+</dialog>
+
+<dialog id="partDialog" class="modal">
+<form method="dialog" id="partForm" class="modal-card">
+<button class="icon-button close-button" value="cancel" aria-label="Close">×</button>
+<p class="eyebrow" id="partDialogEyebrow">PART</p><h2 id="partDialogTitle">Add part</h2>
+<input type="hidden" id="partId"><input type="hidden" id="partCategory">
+<div class="form-grid">
+<label>Part name<input id="partName" required maxlength="160"></label>
+<label>Part cost<input id="partCost" type="number" min="0" step="0.01" placeholder="0.00"></label>
+<label>Install date<input id="partDate" type="date"></label>
+<label>Part source<input id="partSource" maxlength="160"></label>
+<label class="full">Link<input id="partLink" type="url" placeholder="https://"></label>
+<label class="full">Additional notes<textarea id="partNotes" rows="4" maxlength="2000"></textarea></label>
+</div>
+<div class="modal-actions">
+<button type="button" class="button danger" id="deletePartButton">Delete</button><span></span>
+<button type="button" class="button ghost" value="cancel">Cancel</button>
+<button type="submit" class="button primary">Save part</button>
+</div>
+</form>
+</dialog>
+
+<dialog id="authDialog" class="modal">
+<form method="dialog" id="authForm" class="modal-card narrow">
+<button class="icon-button close-button" value="cancel" aria-label="Close">×</button>
+<p class="eyebrow">ACCOUNT</p><h2 id="authTitle">Sign in</h2>
+<p class="muted">Sign in to persist projects across devices.</p>
+<div class="form-grid">
+<label class="full">Email<input id="authEmail" type="email" autocomplete="email" required></label>
+<label class="full">Password<input id="authPassword" type="password" autocomplete="current-password" required minlength="6"></label>
+<label class="full" id="usernameWrap" hidden>Username<input id="authUsername" maxlength="40"></label>
+</div>
+<div class="modal-actions">
+<button type="button" class="button ghost" id="toggleAuth">Create account</button><span></span>
+<button type="button" class="button ghost" value="cancel">Cancel</button>
+<button type="submit" class="button primary" id="authSubmit">Sign in</button>
+</div>
+<p id="authError" class="error-text" hidden></p>
+</form>
+</dialog>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="app.js"></script>
+</body></html>
