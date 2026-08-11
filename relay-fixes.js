@@ -147,19 +147,21 @@
     removeLegacyModeToggle(root);
   }
 
-  // Make downloaded filenames use the current product name even if the existing
-  // main script still creates a legacy filename internally.
-  const nativeAnchorClick = HTMLAnchorElement.prototype.click;
+  /*
+   * IMPORTANT:
+   * This compatibility file intentionally contains NO import/export behavior.
+   *
+   * It does not:
+   * - intercept Export clicks
+   * - intercept Import clicks
+   * - show import/export confirmations
+   * - replay Export events
+   * - programmatically open #importInput
+   * - override HTMLAnchorElement.click()
+   *
+   * The original app.js is therefore the sole owner of both features.
+   */
 
-  HTMLAnchorElement.prototype.click = function patchedAnchorClick(...args) {
-    if (this.download) {
-      this.download = swapBrand(this.download);
-    }
-
-    return nativeAnchorClick.apply(this, args);
-  };
-
-  // Capture these actions before app.js handlers so cancellation truly cancels.
   document.addEventListener(
     "click",
     (event) => {
@@ -180,38 +182,6 @@
         return;
       }
 
-      const exportButton = target.closest("[data-action='export']");
-
-      if (exportButton) {
-        const approved = window.confirm(
-          "Export your RELAY project data to a file?"
-        );
-
-        if (!approved) {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-        }
-
-        return;
-      }
-
-      const importLabel = target.closest(".import-label");
-
-      // A label click subsequently activates its hidden input. Confirm on the
-      // label activation only so the user sees exactly one prompt.
-      if (importLabel && target.id !== "importInput") {
-        const approved = window.confirm(
-          "Importing data can add or merge projects in RELAY. Continue?"
-        );
-
-        if (!approved) {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-        }
-
-        return;
-      }
-
       const authButton = target.closest("#authButton");
 
       if (authButton) {
@@ -222,7 +192,7 @@
     true
   );
 
-  // Dismiss the account dropdown when the user clicks anywhere outside it.
+  // Dismiss the account dropdown when the user clicks outside it.
   document.addEventListener(
     "pointerdown",
     (event) => {
@@ -239,8 +209,8 @@
     true
   );
 
-  // Remove the dropdown after sign-out while allowing the existing sign-out
-  // handler to finish first.
+  // Remove the dropdown after sign-out while allowing app.js to perform the
+  // actual sign-out first.
   document.addEventListener("click", (event) => {
     const target = event.target;
 
