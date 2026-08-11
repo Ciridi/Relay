@@ -1,21 +1,119 @@
 /* GarageLog v2 — Supabase integration.
    Replace the two placeholders below. NEVER use a service_role/secret key here. */
 (() => {
-"use strict";
-const CATEGORIES=["ENGINE","SUSPENSION","BRAKES","INTERIOR","WHEELS","PAINT","BODYKIT","EXHAUST","ELECTRICAL","OTHER"];
-const FALLBACK_IMAGE="https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?auto=format&fit=crop&w=900&q=80";
-const config=window.GARAGELOG_SUPABASE||{url:"https://coiqtywzdcpremwtfrwe.supabase.co",anonKey:"sb_publishable_5whWyCwroyRSUc03OdLpvQ_kkx4r-UQ"};
-const state={supabase:null,user:null,profile:null,projects:[],currentProjectId:null,currentProject:null,category:"ENGINE",editMode:true,sort:"updated",authMode:"login"};
-const $=s=>document.querySelector(s),main=$("#main"),toast=$("#toast");
-const configured=()=>Boolean(config.url&&!config.url.startsWith("YOUR_")&&config.anonKey&&!config.anonKey.startsWith("YOUR_"));
-const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
-const uid=()=>crypto.randomUUID?crypto.randomUUID():Date.now()+"-"+Math.random();
-const money=v=>new Intl.NumberFormat(undefined,{style:"currency",currency:"USD"}).format(Number(v)||0);
-const dateText=v=>v?new Intl.DateTimeFormat(undefined,{dateStyle:"medium"}).format(new Date(v)):"—";
-const total=p=>(p?.parts||[]).reduce((s,x)=>s+Number(x.cost||0),0);
-const logged=()=>Boolean(state.user);
-function notify(m){toast.textContent=m;toast.classList.add("show");clearTimeout(notify.t);notify.t=setTimeout(()=>toast.classList.remove("show"),2800)}
-async function safe(fn,msg){try{return await fn()}catch(e){console.error(e);notify(e?.message||msg);return null}}
+  "use strict";
+
+  // ---------------------------------------------------------------------------
+  // Configuration and application state
+  // ---------------------------------------------------------------------------
+
+  const CATEGORIES = [
+    "ENGINE",
+    "SUSPENSION",
+    "BRAKES",
+    "INTERIOR",
+    "WHEELS",
+    "PAINT",
+    "BODYKIT",
+    "EXHAUST",
+    "ELECTRICAL",
+    "OTHER",
+  ];
+
+  const FALLBACK_IMAGE =
+    "https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?auto=format&fit=crop&w=900&q=80";
+
+  const config = window.GARAGELOG_SUPABASE || {
+    url: "https://coiqtywzdcpremwtfrwe.supabase.co",
+    anonKey: "sb_publishable_5whWyCwroyRSUc03OdLpvQ_kkx4r-UQ",
+  };
+
+  const state = {
+    supabase: null,
+    user: null,
+    profile: null,
+    projects: [],
+    currentProjectId: null,
+    currentProject: null,
+    category: "ENGINE",
+    editMode: true,
+    sort: "updated",
+    authMode: "login",
+  };
+
+  const $ = (selector) => document.querySelector(selector);
+  const main = $("#main");
+  const toast = $("#toast");
+
+  // ---------------------------------------------------------------------------
+  // Small helpers
+  // ---------------------------------------------------------------------------
+
+  const configured = () =>
+    Boolean(
+      config.url &&
+        !config.url.startsWith("YOUR_") &&
+        config.anonKey &&
+        !config.anonKey.startsWith("YOUR_"),
+    );
+
+  const esc = (value) =>
+    String(value ?? "").replace(
+      /[&<>"']/g,
+      (character) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#039;",
+        })[character],
+    );
+
+  const uid = () =>
+    crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+
+  const money = (value) =>
+    new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: "USD",
+    }).format(Number(value) || 0);
+
+  const dateText = (value) =>
+    value
+      ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(
+          new Date(value),
+        )
+      : "—";
+
+  const total = (project) =>
+    (project?.parts || []).reduce(
+      (sum, part) => sum + Number(part.cost || 0),
+      0,
+    );
+
+  const logged = () => Boolean(state.user);
+
+  function notify(message) {
+    toast.textContent = message;
+    toast.classList.add("show");
+    clearTimeout(notify.t);
+    notify.t = setTimeout(() => toast.classList.remove("show"), 2800);
+  }
+
+  async function safe(fn, fallbackMessage) {
+    try {
+      return await fn();
+    } catch (error) {
+      console.error(error);
+      notify(error?.message || fallbackMessage);
+      return null;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Supabase initialization and data loading
+  // ---------------------------------------------------------------------------
 async function init(){
  if(configured()&&window.supabase){
   state.supabase=window.supabase.createClient(config.url,config.anonKey);
@@ -26,8 +124,32 @@ async function init(){
  render();
 }
 function guestProjects(){return[{id:"guest-demo",name:"E36 Track Refresh",description:"Temporary demo project — sign in to persist your builds.",image_url:FALLBACK_IMAGE,start_date:"2026-01-18",created_at:"2026-01-18T12:00:00Z",updated_at:"2026-08-04T16:20:00Z",parts:[{id:"gp1",category:"ENGINE",name:"Cold air intake",cost:340,install_date:"2026-02-10",source:"Example Motors",link:"",notes:"Prototype item."},{id:"gp2",category:"SUSPENSION",name:"Coilover kit",cost:1299,install_date:"2026-08-04",source:"Example Motors",link:"",notes:"Corner-weight after alignment."}],logs:[]}]}
-async function loadAccount(){if(!state.user)return;await safe(async()=>{const p=await state.supabase.from("profiles").select("*").eq("id",state.user.id).maybeSingle();if(p.error)throw p.error;state.profile=p.data;await loadProjects()},"Could not load your account.")}
-async function loadProjects(){const {data,error}=await state.supabase.from("project_summaries").select("*").order("updated_at",{ascending:false});if(error)throw error;state.projects=data||[]}
+async function loadAccount() {
+    if (!state.user) return;
+
+    await safe(async () => {
+      const profileResult = await state.supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", state.user.id)
+        .maybeSingle();
+
+      if (profileResult.error) throw profileResult.error;
+
+      state.profile = profileResult.data;
+      await loadProjects();
+    }, "Could not load your account.");
+  }
+
+  async function loadProjects() {
+    const { data, error } = await state.supabase
+      .from("project_summaries")
+      .select("*")
+      .order("updated_at", { ascending: false });
+
+    if (error) throw error;
+    state.projects = data || [];
+  }
 async function loadProject(id){
  if(!logged()){state.currentProject=state.projects.find(p=>p.id===id)||null;return state.currentProject}
  return safe(async()=>{const p=await state.supabase.from("projects").select("*").eq("id",id).single();if(p.error)throw p.error;const [parts,logs]=await Promise.all([state.supabase.from("parts").select("*").eq("project_id",id).order("created_at"),state.supabase.from("build_logs").select("*").eq("project_id",id).order("created_at",{ascending:false})]);if(parts.error)throw parts.error;if(logs.error)throw logs.error;state.currentProject={...p.data,parts:parts.data||[],logs:logs.data||[]};return state.currentProject},"Could not load this project.")}
@@ -61,24 +183,82 @@ async function savePart(e){e.preventDefault();const p=state.currentProject,id=$(
  const r=await safe(async()=>{if(id){const q=await state.supabase.from("parts").update(payload).eq("id",id).select().single();if(q.error)throw q.error;return q.data}const q=await state.supabase.from("parts").insert(payload).select().single();if(q.error)throw q.error;return q.data},"Could not save part.");if(!r)return;await touch(p.id);$("#partDialog").close();notify(id?"Part updated.":"Part added.");renderBuilder()}
 async function deletePart(){const id=$("#partId").value,p=state.currentProject;if(!id||!confirm("Delete this part?"))return;if(!logged()){p.parts=p.parts.filter(x=>x.id!==id);$("#partDialog").close();notify("Part deleted.");renderBuilder();return}const r=await safe(()=>state.supabase.from("parts").delete().eq("id",id),"Could not delete part.");if(r===null)return;await touch(p.id);$("#partDialog").close();notify("Part deleted.");renderBuilder()}
 async function touch(id){const {error}=await state.supabase.from("projects").update({updated_at:new Date().toISOString()}).eq("id",id);if(error)console.error(error)}
-async function authSubmit(e){e.preventDefault();$("#authError").hidden=true;if(!state.supabase){notify("Supabase is not configured.");$("#authDialog").close();return}try{const email=$("#authEmail").value.trim(),password=$("#authPassword").value,username=$("#authUsername").value.trim();let r;if(state.authMode==="login")r=await state.supabase.auth.signInWithPassword({email,password});
-else r=await state.supabase.auth.signUp({
-  email,
-  password,
-  options: {
-    data: {
-      username: username || null,
-      display_name: username || null
+async function authSubmit(event) {
+    event.preventDefault();
+
+    const authError = $("#authError");
+    authError.hidden = true;
+
+    if (!state.supabase) {
+      notify("Supabase is not configured.");
+      $("#authDialog").close();
+      return;
+    }
+
+    try {
+      const email = $("#authEmail").value.trim();
+      const password = $("#authPassword").value;
+      const username = $("#authUsername").value.trim();
+
+      let result;
+
+      if (state.authMode === "login") {
+        result = await state.supabase.auth.signInWithPassword({ email, password });
+      } else {
+        // Profile creation is handled by the database trigger on auth.users.
+        // We only pass the profile values as Auth user metadata here.
+        result = await state.supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              username: username || null,
+              display_name: username || null,
+            },
+          },
+        });
+      }
+
+      if (result.error) throw result.error;
+
+      // With email confirmation enabled, signUp() creates the user/profile but
+      // intentionally returns no active session until confirmation is complete.
+      if (!result.data.session) {
+        notify("Account created. Check your email if confirmation is enabled.");
+        $("#authDialog").close();
+        return;
+      }
+
+      state.user = result.data.user;
+      await loadAccount();
+      $("#authDialog").close();
+      notify("Signed in.");
+      render();
+    } catch (error) {
+      console.error(error);
+      authError.hidden = false;
+      authError.textContent = error.message || "Authentication failed.";
     }
   }
-});if(r.error)throw r.error;
 
+  // ---------------------------------------------------------------------------
+  // Authentication
+  // ---------------------------------------------------------------------------
 
-if(!r.data.session){notify("Account created. Check your email if confirmation is enabled.");$("#authDialog").close();return}state.user=r.data.user;await loadAccount();$("#authDialog").close();notify("Signed in.");render()}catch(e){console.error(e);$("#authError").hidden=false;$("#authError").textContent=e.message||"Authentication failed."}}
-async function signOut(){const r=await safe(()=>state.supabase.auth.signOut(),"Could not sign out.");if(r===null)return;state.user=null;state.profile=null;state.projects=guestProjects();location.hash="#/projects";notify("Signed out. Guest mode is active.")}
-function exportData(){const blob=new Blob([JSON.stringify({format:"GarageLog Export",version:2,exportedAt:new Date().toISOString(),projects:state.projects},null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="garagelog-export.json";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);notify("Export created.")}
+  async function signOut(){const r=await safe(()=>state.supabase.auth.signOut(),"Could not sign out.");if(r===null)return;state.user=null;state.profile=null;state.projects=guestProjects();location.hash="#/projects";notify("Signed out. Guest mode is active.")}
+
+  // ---------------------------------------------------------------------------
+  // Import / export
+  // ---------------------------------------------------------------------------
+
+  function exportData(){const blob=new Blob([JSON.stringify({format:"GarageLog Export",version:2,exportedAt:new Date().toISOString(),projects:state.projects},null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="garagelog-export.json";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);notify("Export created.")}
 function importData(file){const r=new FileReader();r.onerror=()=>notify("Could not read file.");r.onload=async()=>{try{const d=JSON.parse(r.result);if(!Array.isArray(d.projects))throw new Error("Invalid GarageLog export.");if(!logged()){state.projects=d.projects;notify("Import complete.");renderProjects();return}for(const p of d.projects){const q=await state.supabase.from("projects").insert({user_id:state.user.id,name:p.name||"Imported Project",description:p.description||"",image_url:p.image_url||p.image||null,start_date:p.start_date||p.startDate||null}).select().single();if(q.error)throw q.error;for(const x of p.parts||[])await state.supabase.from("parts").insert({project_id:q.data.id,category:x.category||"OTHER",name:x.name||"Imported Part",cost:Number(x.cost)||0,install_date:x.install_date||x.installDate||null,source:x.source||null,link:x.link||null,notes:x.notes||null});for(const l of p.logs||[])await state.supabase.from("build_logs").insert({project_id:q.data.id,text:l.text||""})}await loadProjects();notify("Import complete.");renderProjects()}catch(e){console.error(e);notify(e.message||"Import failed.")}};r.readAsText(file)}
-document.addEventListener("click",e=>{const route=e.target.closest("[data-route]");if(route){location.hash="#/"+route.dataset.route;return}const op=e.target.closest("[data-open-project]");if(op){location.hash="#/project/"+encodeURIComponent(op.dataset.openProject);return}const cat=e.target.closest("[data-category]");if(cat){state.category=cat.dataset.category;renderBuilder();return}const part=e.target.closest("[data-part]");if(part){const x=state.currentProject?.parts?.find(p=>p.id===part.dataset.part);if(x)openPart(x);return}const a=e.target.closest("[data-action]");if(!a)return;switch(a.dataset.action){case"new-project":openProjectDialog();break;case"edit-project":openProjectDialog(state.currentProject);break;case"export":exportData();break;case"import-prompt":$("#importInput").click();break;case"auth":if(state.user)document.querySelector(".account-menu")?.remove()||showAccountMenu();else $("#authDialog").showModal();break;case"mode":state.editMode=a.dataset.mode==="edit";renderBuilder();break;case"add-part":openPart();break;case"logs":state.currentProject.showAllLogs=!state.currentProject.showAllLogs;renderBuilder();break;case"signout":signOut();break}});
+
+  // ---------------------------------------------------------------------------
+  // Global event wiring
+  // ---------------------------------------------------------------------------
+
+  document.addEventListener("click",e=>{const route=e.target.closest("[data-route]");if(route){location.hash="#/"+route.dataset.route;return}const op=e.target.closest("[data-open-project]");if(op){location.hash="#/project/"+encodeURIComponent(op.dataset.openProject);return}const cat=e.target.closest("[data-category]");if(cat){state.category=cat.dataset.category;renderBuilder();return}const part=e.target.closest("[data-part]");if(part){const x=state.currentProject?.parts?.find(p=>p.id===part.dataset.part);if(x)openPart(x);return}const a=e.target.closest("[data-action]");if(!a)return;switch(a.dataset.action){case"new-project":openProjectDialog();break;case"edit-project":openProjectDialog(state.currentProject);break;case"export":exportData();break;case"import-prompt":$("#importInput").click();break;case"auth":if(state.user)document.querySelector(".account-menu")?.remove()||showAccountMenu();else $("#authDialog").showModal();break;case"mode":state.editMode=a.dataset.mode==="edit";renderBuilder();break;case"add-part":openPart();break;case"logs":state.currentProject.showAllLogs=!state.currentProject.showAllLogs;renderBuilder();break;case"signout":signOut();break}});
 function showAccountMenu(){const m=document.createElement("div");m.className="account-menu";m.innerHTML=`<div class="muted" style="padding:7px 10px">${esc(state.profile?.username||state.user.email)}</div><button data-action="signout">Sign out</button>`;document.body.appendChild(m)}
 $("#projectForm").addEventListener("submit",saveProject);$("#deleteProjectButton").addEventListener("click",deleteProject);$("#partForm").addEventListener("submit",savePart);$("#deletePartButton").addEventListener("click",deletePart);$("#authForm").addEventListener("submit",authSubmit);
 $("#toggleAuth").addEventListener("click",()=>{state.authMode=state.authMode==="login"?"signup":"login";const s=state.authMode==="signup";$("#authTitle").textContent=s?"Create account":"Sign in";$("#authSubmit").textContent=s?"Create account":"Sign in";$("#toggleAuth").textContent=s?"Back to sign in":"Create account";$("#usernameWrap").hidden=!s});
