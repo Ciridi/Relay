@@ -31,7 +31,7 @@
   </div>
 
   <dialog id="projectDialog" class="modal project-modal">
-    <form method="dialog" id="projectForm" class="modal-card">
+    <form method="dialog" id="projectForm" class="modal-card project-wizard">
       <button
         type="button"
         class="icon-button close-button"
@@ -39,93 +39,175 @@
         aria-label="Close"
       >×</button>
 
-      <p class="eyebrow">PROJECT</p>
+      <p class="eyebrow">
+        PROJECT · STEP <span id="projectStepNumber">1</span> OF 4
+      </p>
       <h2 id="projectDialogTitle">New project</h2>
       <input type="hidden" id="projectId">
 
-      <div class="form-grid">
-        <label class="full">
-          Project name
-          <input id="projectName" required maxlength="160">
-        </label>
-
-        <fieldset class="vehicle-section full">
-          <legend>Vehicle</legend>
-          <p class="vehicle-help">Enter the factory vehicle this project is based on.</p>
-          <div class="vehicle-grid">
-            <label>
-              Year
-              <select id="vehicleYear" required>
-                <option value="">Select year</option>
-              </select>
-            </label>
-            <label>
-              Make
-              <input id="vehicleMake" required maxlength="80" placeholder="e.g. BMW">
-            </label>
-            <label>
-              Model
-              <input id="vehicleModel" required maxlength="120" placeholder="e.g. 328i">
-            </label>
-            <label>
-              Engine
-              <input id="vehicleEngine" required maxlength="160" placeholder="e.g. M52B28 2.8L I6">
-            </label>
-          </div>
-        </fieldset>
-
-        <label class="swap-toggle full" for="projectSwapped">
-          <span>
-            <strong>Swapped</strong>
-            <span class="muted">This project uses an engine from a different vehicle.</span>
-          </span>
-          <input id="projectSwapped" type="checkbox" role="switch">
-        </label>
-
-        <fieldset class="vehicle-section swapped-vehicle full" id="swapVehicleFields" hidden>
-          <legend>Donor vehicle / engine</legend>
-          <p class="vehicle-help">Enter the donor vehicle and engine details.</p>
-          <div class="vehicle-grid">
-            <label>
-              Year
-              <select id="swapVehicleYear">
-                <option value="">Select year</option>
-              </select>
-            </label>
-            <label>
-              Make
-              <input id="swapVehicleMake" maxlength="80" placeholder="e.g. Chevrolet">
-            </label>
-            <label>
-              Model
-              <input id="swapVehicleModel" maxlength="120" placeholder="e.g. Corvette">
-            </label>
-            <label>
-              Engine
-              <input id="swapVehicleEngine" maxlength="160" placeholder="e.g. LS3 6.2L V8">
-            </label>
-          </div>
-        </fieldset>
-
-        <label class="full">
-          Description
-          <textarea id="projectDescription" rows="4" maxlength="3000"></textarea>
-        </label>
-        <label>
-          Start date
-          <input id="projectStartDate" type="date">
-        </label>
-        <label>
-          Project image URL
-          <input id="projectImage" type="url" placeholder="https://">
-        </label>
+      <div class="wizard-progress" aria-hidden="true">
+        <span class="active" data-progress-step="1"></span>
+        <span data-progress-step="2"></span>
+        <span data-progress-step="3"></span>
+        <span data-progress-step="4"></span>
       </div>
 
-      <div class="modal-actions">
+      <section class="wizard-step" data-project-step="1">
+        <div class="wizard-heading">
+          <h3>Project details</h3>
+          <p class="muted">Give the build a name and a short description.</p>
+        </div>
+
+        <div class="form-grid">
+          <label class="full">
+            Project name
+            <input id="projectName" required maxlength="160" autocomplete="off">
+          </label>
+          <label class="full">
+            Description
+            <textarea id="projectDescription" rows="5" maxlength="3000"></textarea>
+          </label>
+        </div>
+      </section>
+
+      <section class="wizard-step" data-project-step="2" hidden>
+        <div class="wizard-heading">
+          <h3>Project start date</h3>
+          <p class="muted">Choose when work on this project begins.</p>
+        </div>
+
+        <div class="form-grid">
+          <label class="full">
+            Start date
+            <input id="projectStartDate" type="date">
+          </label>
+        </div>
+      </section>
+
+      <section class="wizard-step" data-project-step="3" hidden>
+        <div class="wizard-heading">
+          <h3>Vehicle</h3>
+          <p class="muted">Enter the vehicle the project is based on.</p>
+        </div>
+
+        <div class="vehicle-grid wizard-vehicle-grid">
+          <label>
+            Year
+            <input
+              id="wizardVehicleYear"
+              type="text"
+              inputmode="numeric"
+              autocomplete="off"
+              maxlength="4"
+              pattern="[0-9]{4}"
+              placeholder="e.g. 1998"
+              required
+            >
+          </label>
+          <label>
+            Make
+            <input
+              id="wizardVehicleMake"
+              type="text"
+              autocomplete="off"
+              maxlength="100"
+              placeholder="e.g. Toyota"
+              required
+            >
+          </label>
+          <label class="full">
+            Model
+            <input
+              id="wizardVehicleModel"
+              type="text"
+              autocomplete="off"
+              maxlength="120"
+              placeholder="e.g. Supra"
+              required
+            >
+          </label>
+        </div>
+
+        <label class="swap-toggle engine-swap-toggle" for="engineSwap">
+          <span>
+            <strong>Engine Swap</strong>
+            <span class="muted">Enable this only when the project uses a swapped engine.</span>
+          </span>
+          <input id="engineSwap" type="checkbox" role="switch">
+        </label>
+
+        <div id="engineSwapField" class="engine-swap-field" hidden>
+          <label>
+            Engine
+            <input
+              id="engineSwapValue"
+              type="text"
+              maxlength="160"
+              autocomplete="off"
+              placeholder="e.g. 2JZ-GTE"
+            >
+          </label>
+        </div>
+
+        <!--
+          Compatibility controls:
+          The current app.js expects these IDs. They remain present but are no longer
+          user-facing. project-wizard.js synchronizes the new text fields into them
+          immediately before the existing save handler runs.
+        -->
+        <div class="legacy-vehicle-compat" aria-hidden="true" hidden>
+          <select id="vehicleYear"><option value=""></option></select>
+          <select id="vehicleMake"><option value=""></option></select>
+          <select id="vehicleModel"><option value=""></option></select>
+          <select id="vehicleEngine"><option value=""></option></select>
+
+          <input id="projectSwapped" type="checkbox">
+
+          <fieldset id="swapVehicleFields" hidden>
+            <select id="swapVehicleYear"><option value=""></option></select>
+            <select id="swapVehicleMake"><option value=""></option></select>
+            <select id="swapVehicleModel"><option value=""></option></select>
+            <select id="swapVehicleEngine"><option value=""></option></select>
+          </fieldset>
+        </div>
+      </section>
+
+      <section class="wizard-step" data-project-step="4" hidden>
+        <div class="wizard-heading">
+          <h3>Choose an image</h3>
+          <p class="muted" id="imageSearchPrompt">
+            RELAY will search Pexels for three images using the year, make, and model from the previous step.
+          </p>
+        </div>
+
+        <input id="projectImage" type="hidden">
+
+        <div class="image-provider-note">
+          <a href="https://www.pexels.com" target="_blank" rel="noopener noreferrer">Photos provided by Pexels</a>
+        </div>
+        <div id="imageSearchStatus" class="image-search-status" role="status" aria-live="polite"></div>
+        <div id="projectImageChoices" class="image-choice-grid" role="radiogroup" aria-label="Project image choices"></div>
+
+        <div class="image-actions">
+          <button type="button" class="button ghost" id="refreshProjectImages">Refresh suggestions</button>
+        </div>
+
+        <div class="manual-image-fallback">
+          <span class="muted">Or use an image URL manually</span>
+          <label>
+            Image URL
+            <input id="manualProjectImage" type="url" placeholder="https://">
+          </label>
+        </div>
+      </section>
+
+      <div class="wizard-actions">
         <button type="button" class="button danger" id="deleteProjectButton">Delete</button>
-        <span></span>
+        <span class="wizard-spacer"></span>
         <button type="button" class="button ghost" data-dialog-close>Cancel</button>
-        <button type="submit" class="button primary">Save project</button>
+        <button type="button" class="button ghost" id="projectPreviousButton" disabled>Previous</button>
+        <button type="button" class="button primary" id="projectNextButton">Next</button>
+        <button type="submit" class="button primary" id="projectSaveButton" hidden>Save project</button>
       </div>
     </form>
   </dialog>
@@ -228,5 +310,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="relay-fixes.js"></script>
   <script src="app.js"></script>
+  <script src="relay-image-config.js"></script>
+  <script src="project-wizard.js"></script>
 </body>
 </html>
