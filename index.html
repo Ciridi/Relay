@@ -30,7 +30,7 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
 
-  <dialog id="projectDialog" class="modal">
+  <dialog id="projectDialog" class="modal project-modal">
     <form method="dialog" id="projectForm" class="modal-card">
       <button
         type="button"
@@ -48,6 +48,65 @@
           Project name
           <input id="projectName" required maxlength="160">
         </label>
+
+        <fieldset class="vehicle-section full">
+          <legend>Vehicle</legend>
+          <p class="vehicle-help">Enter the factory vehicle this project is based on.</p>
+          <div class="vehicle-grid">
+            <label>
+              Year
+              <select id="vehicleYear" required>
+                <option value="">Select year</option>
+              </select>
+            </label>
+            <label>
+              Make
+              <input id="vehicleMake" required maxlength="80" placeholder="e.g. BMW">
+            </label>
+            <label>
+              Model
+              <input id="vehicleModel" required maxlength="120" placeholder="e.g. 328i">
+            </label>
+            <label>
+              Engine
+              <input id="vehicleEngine" required maxlength="160" placeholder="e.g. M52B28 2.8L I6">
+            </label>
+          </div>
+        </fieldset>
+
+        <label class="swap-toggle full" for="projectSwapped">
+          <span>
+            <strong>Swapped</strong>
+            <span class="muted">This project uses an engine from a different vehicle.</span>
+          </span>
+          <input id="projectSwapped" type="checkbox" role="switch">
+        </label>
+
+        <fieldset class="vehicle-section swapped-vehicle full" id="swapVehicleFields" hidden>
+          <legend>Donor vehicle / engine</legend>
+          <p class="vehicle-help">Enter the donor vehicle and engine details.</p>
+          <div class="vehicle-grid">
+            <label>
+              Year
+              <select id="swapVehicleYear">
+                <option value="">Select year</option>
+              </select>
+            </label>
+            <label>
+              Make
+              <input id="swapVehicleMake" maxlength="80" placeholder="e.g. Chevrolet">
+            </label>
+            <label>
+              Model
+              <input id="swapVehicleModel" maxlength="120" placeholder="e.g. Corvette">
+            </label>
+            <label>
+              Engine
+              <input id="swapVehicleEngine" maxlength="160" placeholder="e.g. LS3 6.2L V8">
+            </label>
+          </div>
+        </fieldset>
+
         <label class="full">
           Description
           <textarea id="projectDescription" rows="4" maxlength="3000"></textarea>
@@ -167,7 +226,6 @@
   </dialog>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- Load the compatibility fixes before the main app so confirmations can intercept actions cleanly. -->
   <script src="relay-fixes.js"></script>
   <script src="app.js"></script>
 </body>
