@@ -11,6 +11,7 @@
   const previousButton = document.getElementById("projectPreviousButton");
   const nextButton = document.getElementById("projectNextButton");
   const saveButton = document.getElementById("projectSaveButton");
+  const projectId = document.getElementById("projectId");
 
   const visibleYear = document.getElementById("wizardVehicleYear");
   const visibleMake = document.getElementById("wizardVehicleMake");
@@ -139,7 +140,34 @@
     if (engineSwapValue) engineSwapValue.required = checked;
   }
 
+  function clearWizardSessionFields() {
+    if (visibleYear) visibleYear.value = "";
+    if (visibleMake) visibleMake.value = "";
+    if (visibleModel) visibleModel.value = "";
+    if (engineSwap) engineSwap.checked = false;
+    if (engineSwapValue) engineSwapValue.value = "";
+
+    selectedImageUrl = "";
+    lastSearchKey = "";
+    if (projectImage) projectImage.value = "";
+    if (manualImage) manualImage.value = "";
+    imageChoices?.replaceChildren();
+    if (imageStatus) imageStatus.textContent = "";
+
+    setEngineSwapUi();
+  }
+
   function hydrateFromLegacy() {
+    const isNewProject = !text(projectId?.value);
+
+    // A brand-new project always starts with clean wizard-only fields. This runs
+    // only when the dialog is opened/re-opened, not when Previous/Next is used,
+    // so navigation within the same project-creation session preserves input.
+    if (isNewProject) {
+      clearWizardSessionFields();
+      setStep(1, { searchImages: false });
+      return;
+    }
     const sourceWasSwapped = Boolean(legacySwapped?.checked);
     const donorEngine = text(legacySwapEngine?.value);
 
@@ -340,11 +368,28 @@
         : "No matching images were returned.";
     } catch (error) {
       if (error?.name === "AbortError") return;
+
+      console.error("[RELAY image search] Request failed", {
+        endpoint,
+        pageOrigin: window.location.origin,
+        error
+      });
+
       const hasExisting = showExistingImage();
+      if (!hasExisting) renderImageChoices([]);
+
+      const isNetworkFailure =
+        error instanceof TypeError ||
+        /network|fetch|cors/i.test(String(error?.message || ""));
+
+      const detail = isNetworkFailure
+        ? "Could not reach the Supabase Edge Function. Check the function URL, JWT verification setting, ALLOWED_ORIGIN, and Edge Function logs."
+        : String(error?.message || "Image search failed.");
+
       imageStatus.className = "image-search-status error";
       imageStatus.textContent = hasExisting
-        ? `Image search is unavailable. Your current image is still selected. ${error.message}`
-        : `Image search is unavailable. You can paste an image URL below. ${error.message}`;
+        ? `Image search is unavailable. Your current image is still selected. ${detail}`
+        : `Image search is unavailable. You can paste an image URL below. ${detail}`;
     } finally {
       refreshImagesButton.disabled = false;
     }
@@ -412,10 +457,10 @@
   dialog.addEventListener("close", () => {
     if (searchController) searchController.abort();
     searchController = null;
-    selectedImageUrl = "";
-    lastSearchKey = "";
-    imageChoices.replaceChildren();
-    imageStatus.textContent = "";
+
+    // End the current wizard session. If the user opens an existing project later,
+    // hydrateFromLegacy() repopulates these fields from that project's saved data.
+    clearWizardSessionFields();
     setStep(1, { searchImages: false });
   });
 
