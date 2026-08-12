@@ -123,7 +123,7 @@
   }
 
   function setStep(step, options = {}) {
-    const target = Math.max(1, Math.min(4, Number(step) || 1));
+    const target = Math.max(1, Math.min(5, Number(step) || 1));
     currentStep = target;
 
     steps.forEach((panel) => {
@@ -136,8 +136,8 @@
 
     if (stepNumber) stepNumber.textContent = String(target);
     if (previousButton) previousButton.disabled = target === 1;
-    if (nextButton) nextButton.hidden = target === 4;
-    if (saveButton) saveButton.hidden = target !== 4;
+    if (nextButton) nextButton.hidden = target === 5;
+    if (saveButton) saveButton.hidden = target !== 5;
 
     const active = steps.find((panel) => Number(panel.dataset.projectStep) === target);
     active?.querySelector("input:not([type=hidden]), textarea, select")?.focus({ preventScroll: true });

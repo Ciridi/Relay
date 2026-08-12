@@ -24,7 +24,7 @@ main{width:min(1180px,90vw);margin:0 auto}.hero{min-height:calc(100vh - 68px);di
 /* Project creation wizard */
 .project-wizard{min-height:540px}
 .project-wizard h2{margin:0}
-.wizard-progress{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:20px 0 24px}
+.wizard-progress{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:20px 0 24px}
 .wizard-progress span{height:4px;border-radius:999px;background:rgba(255,255,255,.08);transition:background .18s}
 .wizard-progress span.active{background:var(--accent)}
 .wizard-step{min-height:310px}
@@ -65,13 +65,14 @@ main{width:min(1180px,90vw);margin:0 auto}.hero{min-height:calc(100vh - 68px);di
 
 
 /* Public visibility */
-.visibility-section{margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}
+.visibility-section{margin-top:22px}
 .visibility-section h4{margin:0 0 10px;font-size:.92rem}
 .visibility-toggle{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:13px 15px;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.025);cursor:pointer;transition:opacity .18s,background .18s,border-color .18s}
 .visibility-toggle:hover{background:rgba(255,255,255,.045);border-color:rgba(255,255,255,.16)}
 .visibility-copy{display:grid;gap:2px}
 .visibility-copy strong{font-size:.92rem}
 .visibility-copy .muted{font-size:.82rem}
+.visibility-status{margin:10px 2px 0;font-size:.84rem}
 .visibility-toggle input{appearance:none;width:46px;height:26px;min-width:46px;padding:0;border:0;border-radius:999px;background:rgba(255,255,255,.12);position:relative;transition:background .18s;box-shadow:none}
 .visibility-toggle input::after{content:"";position:absolute;width:20px;height:20px;left:3px;top:3px;border-radius:50%;background:var(--text);transition:transform .18s}
 .visibility-toggle input:checked{background:var(--accent)}
