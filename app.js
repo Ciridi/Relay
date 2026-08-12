@@ -365,11 +365,12 @@ function openProjectDialog(p=null){
  }
  if(visibilityMode)visibilityMode.textContent=publicToggle.checked?"Public":"Private";
  if(visibilityStatus){
+  visibilityStatus.hidden=signedIn&&!publicToggle.checked;
   visibilityStatus.textContent=!signedIn
    ?"Sign in to make a build public."
    :publicToggle.checked
-    ?"Anyone using Connect can view this build."
-    :"Only you can access this build.";
+    ?"Other people can see your build"
+    :"";
  }
 
  $("#projectDialog").showModal();
@@ -494,9 +495,10 @@ $("#projectPublic")?.addEventListener("change",e=>{
  const mode=$("#projectVisibilityMode");
  const status=$("#projectVisibilityStatus");
  if(mode)mode.textContent=e.target.checked?"Public":"Private";
- if(status)status.textContent=e.target.checked
-  ?"Anyone using Connect can view this build."
-  :"Only you can access this build.";
+ if(status){
+  status.hidden=!e.target.checked;
+  status.textContent=e.target.checked?"Other people can see your build":"";
+ }
 });
 
 document.addEventListener("keydown",e=>{

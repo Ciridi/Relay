@@ -37,7 +37,7 @@
       >×</button>
 
       <p class="eyebrow">
-        PROJECT · STEP <span id="projectStepNumber">1</span> OF 4
+        PROJECT · STEP <span id="projectStepNumber">1</span> OF 5
       </p>
       <h2 id="projectDialogTitle">New project</h2>
       <input type="hidden" id="projectId">
@@ -47,6 +47,7 @@
         <span data-progress-step="2"></span>
         <span data-progress-step="3"></span>
         <span data-progress-step="4"></span>
+        <span data-progress-step="5"></span>
       </div>
 
       <section class="wizard-step" data-project-step="1">
@@ -66,27 +67,6 @@
           </label>
         </div>
 
-        <div class="visibility-section">
-          <h4>Public Visibility</h4>
-          <label
-            class="visibility-toggle"
-            id="projectVisibilityControl"
-            for="projectPublic"
-            title="Build Visibility available only when Signed in"
-          >
-            <span class="visibility-copy">
-              <strong id="projectVisibilityMode">Private</strong>
-              <span class="muted" id="projectVisibilityStatus">Only you can access this build.</span>
-            </span>
-            <input
-              id="projectPublic"
-              type="checkbox"
-              role="switch"
-              aria-label="Public Visibility"
-              disabled
-            >
-          </label>
-        </div>
       </section>
 
       <section class="wizard-step" data-project-step="2" hidden>
@@ -217,6 +197,34 @@
             Image URL
             <input id="manualProjectImage" type="url" placeholder="https://">
           </label>
+        </div>
+      </section>
+
+      <section class="wizard-step showcase-step" data-project-step="5" hidden>
+        <div class="wizard-heading">
+          <h3>Showcase your build?</h3>
+          <p class="muted">Choose whether this project should appear in Connect.</p>
+        </div>
+
+        <div class="visibility-section">
+          <label
+            class="visibility-toggle"
+            id="projectVisibilityControl"
+            for="projectPublic"
+            title="Build Visibility available only when Signed in"
+          >
+            <span class="visibility-copy">
+              <strong id="projectVisibilityMode">Private</strong>
+            </span>
+            <input
+              id="projectPublic"
+              type="checkbox"
+              role="switch"
+              aria-label="Public Visibility"
+              disabled
+            >
+          </label>
+          <p class="visibility-status muted" id="projectVisibilityStatus" hidden></p>
         </div>
       </section>
 
