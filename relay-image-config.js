@@ -11,5 +11,5 @@
   never shipped to browser JavaScript.
 */
 window.RELAY_IMAGE_SEARCH = window.RELAY_IMAGE_SEARCH || {
-  endpoint: "https://YOUR_PROJECT_REF.supabase.co/functions/v1/project-image-search"
+  endpoint: "https://coiqtywzdcpremwtfrwe.supabase.co/functions/v1/project-image-search"
 };
