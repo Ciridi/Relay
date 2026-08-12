@@ -62,6 +62,19 @@
     setLegacySelectValue(legacySwapEngine, "");
   }
 
+  function clearLegacyVehicleCompatibilityFields() {
+    /*
+      These hidden controls are only an adapter for the existing app.js. Do not let
+      values from one modal session become the source for the next project edit.
+    */
+    setLegacySelectValue(legacyYear, "");
+    setLegacySelectValue(legacyMake, "");
+    setLegacySelectValue(legacyModel, "");
+    setLegacySelectValue(legacyEngine, "");
+    if (legacySwapped) legacySwapped.checked = false;
+    clearLegacySwapVehicle();
+  }
+
   function syncCompatibilityFields() {
     setLegacySelectValue(legacyYear, visibleYear?.value);
     setLegacySelectValue(legacyMake, visibleMake?.value);
@@ -140,7 +153,7 @@
     if (engineSwapValue) engineSwapValue.required = checked;
   }
 
-  function clearWizardSessionFields() {
+  function clearWizardSessionFields({ clearLegacy = false } = {}) {
     if (visibleYear) visibleYear.value = "";
     if (visibleMake) visibleMake.value = "";
     if (visibleModel) visibleModel.value = "";
@@ -154,26 +167,37 @@
     imageChoices?.replaceChildren();
     if (imageStatus) imageStatus.textContent = "";
 
+    if (clearLegacy) clearLegacyVehicleCompatibilityFields();
     setEngineSwapUi();
   }
 
-  function hydrateFromLegacy() {
+  function hydrateFromLegacy({ overwrite = false, resetStep = true } = {}) {
     const isNewProject = !text(projectId?.value);
 
-    // A brand-new project always starts with clean wizard-only fields. This runs
-    // only when the dialog is opened/re-opened, not when Previous/Next is used,
-    // so navigation within the same project-creation session preserves input.
+    // A brand-new project always starts with a completely clean adapter state.
+    // Previous/Next never calls this reset, so values still persist while navigating
+    // inside one open wizard session.
     if (isNewProject) {
-      clearWizardSessionFields();
+      clearWizardSessionFields({ clearLegacy: true });
       setStep(1, { searchImages: false });
       return;
     }
+
     const sourceWasSwapped = Boolean(legacySwapped?.checked);
     const donorEngine = text(legacySwapEngine?.value);
+    const year = text(legacyYear?.value);
+    const make = text(legacyMake?.value);
+    const model = text(legacyModel?.value);
 
-    if (visibleYear && !text(visibleYear.value)) visibleYear.value = text(legacyYear?.value);
-    if (visibleMake && !text(visibleMake.value)) visibleMake.value = text(legacyMake?.value);
-    if (visibleModel && !text(visibleModel.value)) visibleModel.value = text(legacyModel?.value);
+    /*
+      Edit hydration must be allowed to overwrite an earlier pass. app.js may finish
+      populating the selected project shortly after showModal(), so the first pass can
+      legitimately see blank adapter fields. The old `only-if-empty` behavior caused
+      stale values from the previously edited/created project to become permanent.
+    */
+    if (visibleYear && (overwrite || !text(visibleYear.value))) visibleYear.value = year;
+    if (visibleMake && (overwrite || !text(visibleMake.value))) visibleMake.value = make;
+    if (visibleModel && (overwrite || !text(visibleModel.value))) visibleModel.value = model;
 
     /*
       Only a project that was explicitly marked swapped in the old model is migrated
@@ -191,7 +215,7 @@
     selectedImageUrl = text(projectImage?.value);
     if (manualImage) manualImage.value = selectedImageUrl;
     setEngineSwapUi();
-    setStep(1, { searchImages: false });
+    if (resetStep) setStep(1, { searchImages: false });
   }
 
   function imageSearchEndpoint() {
@@ -446,10 +470,31 @@
   const openObserver = new MutationObserver(() => {
     if (!dialog.open) return;
 
-    // app.js populates edit values before/around showModal(). Read immediately and
-    // once more on the next task to catch async legacy vehicle population.
-    hydrateFromLegacy();
-    setTimeout(hydrateFromLegacy, 80);
+    const openedProjectId = text(projectId?.value);
+    const isEdit = Boolean(openedProjectId);
+
+    if (isEdit) {
+      // Never display data left in the visible wizard controls from another project
+      // while the selected project's compatibility fields are being populated.
+      if (visibleYear) visibleYear.value = "";
+      if (visibleMake) visibleMake.value = "";
+      if (visibleModel) visibleModel.value = "";
+      if (engineSwap) engineSwap.checked = false;
+      if (engineSwapValue) engineSwapValue.value = "";
+      setEngineSwapUi();
+    }
+
+    // app.js can populate the compatibility controls synchronously or shortly after
+    // showModal(). Re-read during the opening window and intentionally overwrite each
+    // earlier edit-hydration pass so the selected project, not the last project, wins.
+    hydrateFromLegacy({ overwrite: isEdit });
+    [40, 120, 260].forEach((delay) => {
+      setTimeout(() => {
+        if (!dialog.open) return;
+        if (text(projectId?.value) !== openedProjectId) return;
+        hydrateFromLegacy({ overwrite: isEdit, resetStep: false });
+      }, delay);
+    });
   });
 
   openObserver.observe(dialog, { attributes: true, attributeFilter: ["open"] });
@@ -458,9 +503,10 @@
     if (searchController) searchController.abort();
     searchController = null;
 
-    // End the current wizard session. If the user opens an existing project later,
-    // hydrateFromLegacy() repopulates these fields from that project's saved data.
-    clearWizardSessionFields();
+    // End the current wizard session. Clear BOTH the visible wizard fields and the
+    // hidden compatibility controls so no vehicle can leak into the next project.
+    // app.js will repopulate the adapter controls when an existing project is opened.
+    clearWizardSessionFields({ clearLegacy: true });
     setStep(1, { searchImages: false });
   });
 
