@@ -62,3 +62,41 @@ main{width:min(1180px,90vw);margin:0 auto}.hero{min-height:calc(100vh - 68px);di
 
 @media(max-width:760px){.topbar{padding:0 4vw}.topnav .nav-link:not(.import-label){display:none}main{width:min(92vw,1180px)}.page-header{align-items:flex-start;flex-direction:column}.project-card{grid-template-columns:76px 1fr}.project-card .project-total{grid-column:2;text-align:left}.thumb{width:76px;height:68px}.builder-head{grid-template-columns:1fr}.builder-image{width:100%;height:190px}.log-form{grid-template-columns:1fr}.part-row{grid-template-columns:1fr auto}.part-row .date{display:none}.form-grid{grid-template-columns:1fr}.form-grid .full{grid-column:auto}.vehicle-grid{grid-template-columns:1fr}.wizard-vehicle-grid .full{grid-column:auto}.image-choice-grid{grid-template-columns:1fr}.image-choice img{height:190px}.wizard-actions{grid-template-columns:1fr 1fr}.wizard-actions .wizard-spacer{display:none}.wizard-actions .danger{grid-column:1/-1}.modal-actions{grid-template-columns:1fr 1fr}.modal-actions span{display:none}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
+
+
+/* Public visibility */
+.visibility-section{margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}
+.visibility-section h4{margin:0 0 10px;font-size:.92rem}
+.visibility-toggle{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:13px 15px;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.025);cursor:pointer;transition:opacity .18s,background .18s,border-color .18s}
+.visibility-toggle:hover{background:rgba(255,255,255,.045);border-color:rgba(255,255,255,.16)}
+.visibility-copy{display:grid;gap:2px}
+.visibility-copy strong{font-size:.92rem}
+.visibility-copy .muted{font-size:.82rem}
+.visibility-toggle input{appearance:none;width:46px;height:26px;min-width:46px;padding:0;border:0;border-radius:999px;background:rgba(255,255,255,.12);position:relative;transition:background .18s;box-shadow:none}
+.visibility-toggle input::after{content:"";position:absolute;width:20px;height:20px;left:3px;top:3px;border-radius:50%;background:var(--text);transition:transform .18s}
+.visibility-toggle input:checked{background:var(--accent)}
+.visibility-toggle input:checked::after{transform:translateX(20px)}
+.visibility-toggle input:focus-visible{outline:2px solid var(--accent2);outline-offset:3px}
+.visibility-toggle.disabled{opacity:.42;cursor:not-allowed;filter:grayscale(.45)}
+.visibility-toggle.disabled:hover{background:rgba(255,255,255,.025);border-color:var(--line)}
+.visibility-toggle input:disabled{cursor:not-allowed}
+
+/* Connect */
+.connect-loading{padding:70px 20px;text-align:center;color:var(--muted)}
+.connect-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}
+.connect-card{overflow:hidden;border:1px solid var(--line);border-radius:20px;background:rgba(255,255,255,.035);cursor:pointer;box-shadow:var(--shadow);transition:transform .2s,background .2s,border-color .2s,box-shadow .2s}
+.connect-card:hover,.connect-card:focus-visible{transform:scale(1.025);background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.2);outline:none}
+.connect-card-image{display:block;width:100%;aspect-ratio:16/10;object-fit:cover;background:#222}
+.connect-card-copy{padding:15px 16px 17px}
+.connect-card-copy h2{margin:0 0 4px;font-size:1.08rem;line-height:1.25}
+.connect-card-copy p{margin:0;color:var(--muted);font-size:.88rem}
+.connect-back{margin-bottom:2px}
+.public-badge{display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;background:rgba(255,106,0,.13);color:var(--accent2);font-weight:750}
+.connect-part-row{display:grid;grid-template-columns:1fr 130px 150px;gap:15px;align-items:start;padding:16px 8px;border-bottom:1px solid var(--line)}
+.connect-part-row:last-child{border-bottom:0}
+.connect-part-notes{margin:8px 0 0;color:var(--muted);font-size:.84rem;white-space:pre-wrap}
+.connect-part-link{display:inline-block;margin-top:7px;color:var(--accent2);font-size:.82rem;text-decoration:none}
+.connect-part-link:hover{text-decoration:underline}
+
+@media(max-width:900px){.connect-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:760px){.topnav .connect-nav{display:block!important}.connect-grid{grid-template-columns:1fr}.connect-part-row{grid-template-columns:1fr auto}.connect-part-row .date{display:none}}

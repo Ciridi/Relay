@@ -22,6 +22,7 @@
             hidden
           >
         </label>
+        <button class="nav-link connect-nav" data-route="connect">Connect</button>
         <button class="nav-link" data-action="auth" id="authButton">Account</button>
       </nav>
     </header>
@@ -66,6 +67,28 @@
           <label class="full">
             Description
             <textarea id="projectDescription" rows="5" maxlength="3000"></textarea>
+          </label>
+        </div>
+
+        <div class="visibility-section">
+          <h4>Public Visibility</h4>
+          <label
+            class="visibility-toggle"
+            id="projectVisibilityControl"
+            for="projectPublic"
+            title="Build Visibility available only when Signed in"
+          >
+            <span class="visibility-copy">
+              <strong id="projectVisibilityMode">Private</strong>
+              <span class="muted" id="projectVisibilityStatus">Only you can access this build.</span>
+            </span>
+            <input
+              id="projectPublic"
+              type="checkbox"
+              role="switch"
+              aria-label="Public Visibility"
+              disabled
+            >
           </label>
         </div>
       </section>
