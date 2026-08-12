@@ -110,6 +110,46 @@
     return safePublicUrl(value) || FALLBACK_IMAGE;
   }
 
+  function vehicleDetails(project) {
+    const vehicle = project?.vehicle || {};
+    return {
+      year: String(project?.vehicle_year ?? project?.vehicleYear ?? project?.year ?? vehicle.year ?? "").trim(),
+      make: String(project?.vehicle_make ?? project?.vehicleMake ?? project?.make ?? vehicle.make ?? "").trim(),
+      model: String(project?.vehicle_model ?? project?.vehicleModel ?? project?.model ?? vehicle.model ?? "").trim(),
+    };
+  }
+
+  function vehicleLabel(project) {
+    const { year, make, model } = vehicleDetails(project);
+    return [year, make, model].filter(Boolean).join(" ");
+  }
+
+  function setCompatibilitySelectValue(selector, value) {
+    const select = $(selector);
+    if (!select) return;
+    const normalized = String(value ?? "").trim();
+    const option = document.createElement("option");
+    option.value = normalized;
+    option.textContent = normalized;
+    select.replaceChildren(option);
+    select.value = normalized;
+  }
+
+  function hydrateProjectVehicleForm(project) {
+    const { year, make, model } = vehicleDetails(project);
+
+    if ($("#wizardVehicleYear")) $("#wizardVehicleYear").value = year;
+    if ($("#wizardVehicleMake")) $("#wizardVehicleMake").value = make;
+    if ($("#wizardVehicleModel")) $("#wizardVehicleModel").value = model;
+
+    // project-wizard.js still uses these hidden controls as a compatibility adapter.
+    // Populate them from the selected project before opening the dialog so its
+    // anti-stale-state hydration logic has the correct project-specific source.
+    setCompatibilitySelectValue("#vehicleYear", year);
+    setCompatibilitySelectValue("#vehicleMake", make);
+    setCompatibilitySelectValue("#vehicleModel", model);
+  }
+
   function notify(message) {
     toast.textContent = message;
     toast.classList.add("show");
@@ -165,20 +205,29 @@ async function loadAccount() {
         .order("updated_at", { ascending: false }),
       state.supabase
         .from("projects")
-        .select("id,is_public"),
+        .select("id,is_public,vehicle_year,vehicle_make,vehicle_model"),
     ]);
 
     if (summaryResult.error) throw summaryResult.error;
     if (visibilityResult.error) throw visibilityResult.error;
 
-    const visibilityById = new Map(
-      (visibilityResult.data || []).map((project) => [project.id, Boolean(project.is_public)]),
+    // Keep project_summaries focused on its existing aggregate shape. Vehicle
+    // metadata lives on projects and is merged here so schema migrations never
+    // need to replace/drop columns from the live summary view.
+    const projectMetadataById = new Map(
+      (visibilityResult.data || []).map((project) => [project.id, project]),
     );
 
-    state.projects = (summaryResult.data || []).map((project) => ({
-      ...project,
-      is_public: visibilityById.get(project.id) ?? false,
-    }));
+    state.projects = (summaryResult.data || []).map((project) => {
+      const metadata = projectMetadataById.get(project.id) || {};
+      return {
+        ...project,
+        is_public: Boolean(metadata.is_public),
+        vehicle_year: metadata.vehicle_year ?? project.vehicle_year ?? null,
+        vehicle_make: metadata.vehicle_make ?? project.vehicle_make ?? null,
+        vehicle_model: metadata.vehicle_model ?? project.vehicle_model ?? null,
+      };
+    });
   }
 async function loadProject(id){
  if(!logged()){state.currentProject=state.projects.find(p=>p.id===id)||null;return state.currentProject}
@@ -206,7 +255,7 @@ function renderProjects(){
  main.innerHTML=`<section class="page"><div class="page-header"><div><p class="eyebrow">WORKSPACE</p><h1>Your projects</h1><p class="muted">${logged()?"Persistent projects linked to your account.":"Guest mode is temporary. Sign in to persist projects."}</p></div><button class="button primary" data-action="new-project">New project</button></div>${!configured()?`<div class="warning">Supabase is not configured. Add your project URL and publishable/anon key to <code>app.js</code> after running the SQL schema.</div>`:""}<div class="toolbar"><label class="muted">Sort by <select class="select" id="sortSelect"><option value="updated">Recency</option><option value="cost">Total cost</option><option value="mods">Modification amount</option></select></label><button class="button ghost" data-action="import-prompt">Import</button><button class="button ghost" data-action="export">Export</button></div><div class="project-list">${ps.length?ps.map(projectCard).join(""):`<div class="empty"><h2>No projects yet</h2><p class="muted">Start your first build.</p></div>`}</div></section>`;
  $("#sortSelect").value=state.sort;$("#sortSelect").onchange=e=>{state.sort=e.target.value;renderProjects()}
 }
-function projectCard(p){return`<article class="project-card" data-open-project="${esc(p.id)}" tabindex="0" role="button"><img class="thumb" src="${esc(p.image_url||p.image||FALLBACK_IMAGE)}" alt=""><div><h3>${esc(p.name)}</h3><div class="meta">Last modified ${esc(dateText(p.updated_at||p.updatedAt))}${p.is_public?' · Public':''}</div><div class="project-hover">${esc(p.description||"No description yet.")}<br>${esc(dateText(p.start_date||p.startDate))} · ${p.part_count??p.parts?.length??0} modifications</div></div><div class="project-total">${money(p.total_cost??total(p))}</div></article>`}
+function projectCard(p){const vehicle=vehicleLabel(p);return`<article class="project-card" data-open-project="${esc(p.id)}" tabindex="0" role="button"><img class="thumb" src="${esc(p.image_url||p.image||FALLBACK_IMAGE)}" alt=""><div><h3>${esc(p.name)}</h3><div class="project-card-vehicle ${vehicle?"":"missing"}">${esc(vehicle||"Vehicle details not set")}</div><div class="meta">Last modified ${esc(dateText(p.updated_at||p.updatedAt))}${p.is_public?' · Public':''}</div><div class="project-hover">${esc(p.description||"No description yet.")}<br>${esc(dateText(p.start_date||p.startDate))} · ${p.part_count??p.parts?.length??0} modifications</div></div><div class="project-total">${money(p.total_cost??total(p))}</div></article>`}
 
 async function fetchPublicBuilds(){
  if(!state.supabase)throw new Error("Supabase is not configured.");
@@ -217,8 +266,17 @@ async function fetchPublicBuilds(){
 
 async function fetchPublicBuild(id){
  if(!state.supabase)throw new Error("Supabase is not configured.");
- const {data,error}=await state.supabase.rpc("connect_public_build",{build_id:id});
+ const [{data,error},{data:vehicleData,error:vehicleError}]=await Promise.all([
+  state.supabase.rpc("connect_public_build",{build_id:id}),
+  state.supabase.rpc("connect_public_build_vehicle",{build_id:id}),
+ ]);
  if(error)throw error;
+ if(vehicleError){
+  // Keep Connect backward-compatible if the frontend lands before the migration.
+  console.warn("[RELAY] Vehicle metadata RPC unavailable. Run the vehicle metadata migration.",vehicleError);
+ }else if(data?.project&&vehicleData){
+  data.project={...data.project,...vehicleData};
+ }
  return data||null;
 }
 
@@ -261,7 +319,7 @@ async function renderConnectBuild(){
   const logs=p.logs;
   const image=projectImageUrl(p.image_url);
 
-  main.innerHTML=`<section class="page connect-build"><button class="button ghost connect-back" data-route="connect">← Connect</button><div class="builder-head"><img class="builder-image" src="${esc(image)}" alt=""><div><div class="page-header" style="margin-bottom:10px"><div><p class="eyebrow">PUBLIC BUILD</p><h1>${esc(p.name||"Untitled build")}</h1></div></div><p class="muted">${esc(p.description||"No description yet.")}</p><div class="builder-meta"><span>Builder: ${esc(p.owner_name||"RELAY Builder")}</span><span>Start: ${esc(dateText(p.start_date))}</span><span>Modified: ${esc(dateText(p.updated_at))}</span><span class="public-badge">Public</span></div></div></div>
+  main.innerHTML=`<section class="page connect-build"><button class="button ghost connect-back" data-route="connect">← Connect</button><div class="builder-head"><img class="builder-image" src="${esc(image)}" alt=""><div><div class="page-header" style="margin-bottom:10px"><div><p class="eyebrow">PUBLIC BUILD</p><h1>${esc(p.name||"Untitled build")}</h1></div></div><p class="project-vehicle ${vehicleLabel(p)?"":"missing"}">${esc(vehicleLabel(p)||"Vehicle details not set")}</p><p class="muted">${esc(p.description||"No description yet.")}</p><div class="builder-meta"><span>Builder: ${esc(p.owner_name||"RELAY Builder")}</span><span>Start: ${esc(dateText(p.start_date))}</span><span>Modified: ${esc(dateText(p.updated_at))}</span><span class="public-badge">Public</span></div></div></div>
 <section class="panel"><div class="panel-head"><h2>Build Log</h2><span class="muted">${logs.length} entries</span></div><div class="log-list">${logs.length?logs.map(x=>`<article class="log-item"><div class="muted">${esc(dateText(x.created_at))}</div><p>${esc(x.text)}</p></article>`).join(""):`<div class="stock">No build log entries yet.</div>`}</div></section>
 <div class="tabs">${CATEGORIES.map(c=>`<button class="tab ${category===c?"active":""}" data-connect-category="${c}">${c}</button>`).join("")}</div>
 <section class="panel parts-panel"><div class="panel-head"><h2>${esc(category)}</h2><span class="muted">${parts.length} ${parts.length===1?"part":"parts"}</span></div>${parts.length?`<div class="parts-list connect-parts-list">${parts.map(connectPartRow).join("")}</div>`:`<div class="stock">Stock</div>`}<div class="total"><span>Total project cost</span><strong>${money(total(p))}</strong></div></section></section>`;
@@ -273,7 +331,7 @@ async function renderConnectBuild(){
 async function renderBuilder(){
  const p=await loadProject(state.currentProjectId);if(!p){location.hash="#/projects";return}
  const parts=(p.parts||[]).filter(x=>x.category===state.category),logs=p.logs||[],visible=p.showAllLogs?logs:logs.slice(0,3);
- main.innerHTML=`<section class="page"><div class="builder-head"><img class="builder-image" src="${esc(p.image_url||FALLBACK_IMAGE)}" alt=""><div><div class="page-header" style="margin-bottom:10px"><div><p class="eyebrow">PROJECT</p><h1>${esc(p.name)}</h1></div><div class="mode-toggle"><button class="${state.editMode?"active":""}" data-action="mode" data-mode="edit">Modify</button><button class="${!state.editMode?"active":""}" data-action="mode" data-mode="view">View</button></div></div><p class="muted">${esc(p.description||"No description yet.")}</p><div class="builder-meta"><span>Builder: ${esc(state.profile?.username||"Guest")}</span><span>Start: ${esc(dateText(p.start_date))}</span><span>Modified: ${esc(dateText(p.updated_at))}</span><button class="button ghost" data-action="edit-project">Edit project</button></div></div></div>
+ main.innerHTML=`<section class="page"><div class="builder-head"><img class="builder-image" src="${esc(p.image_url||FALLBACK_IMAGE)}" alt=""><div><div class="page-header" style="margin-bottom:10px"><div><p class="eyebrow">PROJECT</p><h1>${esc(p.name)}</h1></div><div class="mode-toggle"><button class="${state.editMode?"active":""}" data-action="mode" data-mode="edit">Modify</button><button class="${!state.editMode?"active":""}" data-action="mode" data-mode="view">View</button></div></div><p class="project-vehicle ${vehicleLabel(p)?"":"missing"}">${esc(vehicleLabel(p)||"Vehicle details not set")}</p><p class="muted">${esc(p.description||"No description yet.")}</p><div class="builder-meta"><span>Builder: ${esc(state.profile?.username||"Guest")}</span><span>Start: ${esc(dateText(p.start_date))}</span><span>Modified: ${esc(dateText(p.updated_at))}</span><button class="button ghost" data-action="edit-project">Edit project</button></div></div></div>
 <section class="panel"><div class="panel-head"><h2>Build Log</h2><span class="muted">${logs.length} entries</span></div>${state.editMode?`<form class="log-form" id="logForm"><textarea id="logText" placeholder="What happened? Add an install note, inspection, milestone, or setback." required maxlength="3000"></textarea><button class="button primary">Post</button></form>`:""}<div class="log-list">${visible.length?visible.map(x=>`<article class="log-item"><div class="muted">${esc(dateText(x.created_at))}</div><p>${esc(x.text)}</p></article>`).join(""):`<div class="stock">No build log entries yet.</div>`}${logs.length>3?`<button class="button ghost" data-action="logs">${p.showAllLogs?"Show less":"Show more"}</button>`:""}</div></section>
 <div class="tabs">${CATEGORIES.map(c=>`<button class="tab ${state.category===c?"active":""}" data-category="${c}">${c}</button>`).join("")}</div>
 <section class="panel parts-panel"><div class="panel-head"><h2>${state.category}</h2>${state.editMode?`<button class="button primary" data-action="add-part">${parts.length?"Add new parts":"Let’s change that"}</button>`:""}</div>${parts.length?`<div class="parts-list">${parts.map(partRow).join("")}</div>`:`<div class="stock">Stock</div>`}<div class="total"><span>Total project cost</span><strong>${money(total(p))}</strong></div></section></section>`;
@@ -288,6 +346,7 @@ function openProjectDialog(p=null){
  $("#projectDescription").value=p?.description||"";
  $("#projectStartDate").value=p?.start_date||new Date().toISOString().slice(0,10);
  $("#projectImage").value=p?.image_url||"";
+ hydrateProjectVehicleForm(p);
  $("#deleteProjectButton").hidden=!p;
 
  const publicToggle=$("#projectPublic");
@@ -315,7 +374,7 @@ function openProjectDialog(p=null){
 
  $("#projectDialog").showModal();
 }
-async function saveProject(e){e.preventDefault();const id=$("#projectId").value,name=$("#projectName").value.trim();if(!name)return;const payload={name,description:$("#projectDescription").value.trim(),start_date:$("#projectStartDate").value||null,image_url:$("#projectImage").value.trim()||null,is_public:logged()?Boolean($("#projectPublic")?.checked):false};if(payload.image_url)try{new URL(payload.image_url)}catch{notify("Please enter a valid image URL.");return}
+async function saveProject(e){e.preventDefault();const id=$("#projectId").value,name=$("#projectName").value.trim();if(!name)return;const vehicleYear=$("#wizardVehicleYear")?.value.trim()||"",vehicleMake=$("#wizardVehicleMake")?.value.trim()||"",vehicleModel=$("#wizardVehicleModel")?.value.trim()||"";const payload={name,description:$("#projectDescription").value.trim(),start_date:$("#projectStartDate").value||null,image_url:$("#projectImage").value.trim()||null,is_public:logged()?Boolean($("#projectPublic")?.checked):false,vehicle_year:vehicleYear?Number(vehicleYear):null,vehicle_make:vehicleMake||null,vehicle_model:vehicleModel||null};if(payload.image_url)try{new URL(payload.image_url)}catch{notify("Please enter a valid image URL.");return}
  if(!logged()){if(id){const p=state.projects.find(x=>x.id===id);Object.assign(p,payload,{updated_at:new Date().toISOString()})}else state.projects.unshift({id:uid(),...payload,created_at:new Date().toISOString(),updated_at:new Date().toISOString(),parts:[],logs:[]});$("#projectDialog").close();notify("Guest project updated.");renderProjects();return}
  const r=await safe(async()=>{if(id){const q=await state.supabase.from("projects").update(payload).eq("id",id).select().single();if(q.error)throw q.error;return q.data}const q=await state.supabase.from("projects").insert({...payload,user_id:state.user.id}).select().single();if(q.error)throw q.error;return q.data},"Could not save project.");if(!r)return;$("#projectDialog").close();await loadProjects();notify(id?"Project updated.":"Project created.");location.hash=`#/project/${id||r.id}`}
 async function deleteProject(){const id=$("#projectId").value;if(!id||!confirm("Delete this project and all of its parts/logs?"))return;if(!logged()){state.projects=state.projects.filter(x=>x.id!==id);$("#projectDialog").close();location.hash="#/projects";notify("Project deleted.");return}const r=await safe(()=>state.supabase.from("projects").delete().eq("id",id),"Could not delete project.");if(r===null)return;$("#projectDialog").close();await loadProjects();location.hash="#/projects";notify("Project deleted.")}
@@ -394,7 +453,7 @@ async function authSubmit(event) {
   // ---------------------------------------------------------------------------
 
   function exportData(){const blob=new Blob([JSON.stringify({format:"GarageLog Export",version:2,exportedAt:new Date().toISOString(),projects:state.projects},null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="garagelog-export.json";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);notify("Export created.")}
-function importData(file){const r=new FileReader();r.onerror=()=>notify("Could not read file.");r.onload=async()=>{try{const d=JSON.parse(r.result);if(!Array.isArray(d.projects))throw new Error("Invalid GarageLog export.");if(!logged()){state.projects=d.projects.map(p=>({...p,is_public:false}));notify("Import complete. Imported guest projects are private.");renderProjects();return}for(const p of d.projects){const q=await state.supabase.from("projects").insert({user_id:state.user.id,name:p.name||"Imported Project",description:p.description||"",image_url:p.image_url||p.image||null,start_date:p.start_date||p.startDate||null,is_public:false}).select().single();if(q.error)throw q.error;for(const x of p.parts||[])await state.supabase.from("parts").insert({project_id:q.data.id,category:x.category||"OTHER",name:x.name||"Imported Part",cost:Number(x.cost)||0,install_date:x.install_date||x.installDate||null,source:x.source||null,link:x.link||null,notes:x.notes||null});for(const l of p.logs||[])await state.supabase.from("build_logs").insert({project_id:q.data.id,text:l.text||""})}await loadProjects();notify("Import complete.");renderProjects()}catch(e){console.error(e);notify(e.message||"Import failed.")}};r.readAsText(file)}
+function importData(file){const r=new FileReader();r.onerror=()=>notify("Could not read file.");r.onload=async()=>{try{const d=JSON.parse(r.result);if(!Array.isArray(d.projects))throw new Error("Invalid GarageLog export.");if(!logged()){state.projects=d.projects.map(p=>({...p,is_public:false}));notify("Import complete. Imported guest projects are private.");renderProjects();return}for(const p of d.projects){const q=await state.supabase.from("projects").insert({user_id:state.user.id,name:p.name||"Imported Project",description:p.description||"",image_url:p.image_url||p.image||null,start_date:p.start_date||p.startDate||null,is_public:false,vehicle_year:Number(vehicleDetails(p).year)||null,vehicle_make:vehicleDetails(p).make||null,vehicle_model:vehicleDetails(p).model||null}).select().single();if(q.error)throw q.error;for(const x of p.parts||[])await state.supabase.from("parts").insert({project_id:q.data.id,category:x.category||"OTHER",name:x.name||"Imported Part",cost:Number(x.cost)||0,install_date:x.install_date||x.installDate||null,source:x.source||null,link:x.link||null,notes:x.notes||null});for(const l of p.logs||[])await state.supabase.from("build_logs").insert({project_id:q.data.id,text:l.text||""})}await loadProjects();notify("Import complete.");renderProjects()}catch(e){console.error(e);notify(e.message||"Import failed.")}};r.readAsText(file)}
 
   // ---------------------------------------------------------------------------
   // Global event wiring

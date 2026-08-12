@@ -195,11 +195,11 @@
         return;
       }
 
-      const importLabel = target.closest(".import-label");
+      const importTrigger = target.closest("[data-action='import-prompt'], .import-label");
 
-      // A label click subsequently activates its hidden input. Confirm on the
-      // label activation only so the user sees exactly one prompt.
-      if (importLabel && target.id !== "importInput") {
+      // Import/export now live in the Projects toolbar. Keep the existing
+      // confirmation behavior attached to whichever UI triggers the file picker.
+      if (importTrigger && target.id !== "importInput") {
         const approved = window.confirm(
           "Importing data can add or merge projects in RELAY. Continue?"
         );

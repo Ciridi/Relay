@@ -12,22 +12,18 @@
       <a class="brand" href="#/">RELAY</a>
       <nav class="topnav" aria-label="Primary navigation">
         <button class="nav-link" data-route="projects">Projects</button>
-        <button class="nav-link" data-action="export">Export</button>
-        <label class="nav-link import-label">
-          Import
-          <input
-            id="importInput"
-            type="file"
-            accept=".json,.txt,application/json,text/plain"
-            hidden
-          >
-        </label>
         <button class="nav-link connect-nav" data-route="connect">Connect</button>
         <button class="nav-link" data-action="auth" id="authButton">Account</button>
       </nav>
     </header>
 
     <main id="main" tabindex="-1"></main>
+    <input
+      id="importInput"
+      type="file"
+      accept=".json,.txt,application/json,text/plain"
+      hidden
+    >
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
 
