@@ -162,3 +162,22 @@ main{width:min(1180px,90vw);margin:0 auto}.hero{min-height:calc(100vh - 68px);di
  .timeline-stage-scroll{margin-inline:-4vw;padding-inline:4vw}
  .timeline-stage{min-width:700px}
 }
+
+/* Account settings */
+.settings-page{max-width:820px}
+.settings-header{margin-bottom:22px}
+.settings-panel{overflow:hidden}
+.settings-section{display:grid;grid-template-columns:minmax(190px,.72fr) minmax(0,1.28fr);gap:30px;padding:28px 30px;border-bottom:1px solid var(--line)}
+.settings-section-copy h2{margin:0 0 6px;font-size:1.05rem}
+.settings-section-copy p{margin:0;font-size:.86rem}
+.settings-grid{margin-top:0}
+.settings-actions{display:flex;justify-content:flex-end;padding:20px 30px}
+.settings-actions .button{min-width:110px}
+.settings-error{margin:18px 30px 0}
+.settings-actions .button:disabled{opacity:.55;cursor:not-allowed;transform:none}
+
+@media(max-width:760px){
+ .settings-section{grid-template-columns:1fr;gap:16px;padding:22px 20px}
+ .settings-actions{padding:18px 20px}
+ .settings-error{margin-inline:20px}
+}

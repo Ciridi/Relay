@@ -270,6 +270,12 @@ function render(){
   renderConnect();
  }else if(h==="timeline"){
   renderTimeline();
+ }else if(h==="settings"){
+  if(!logged()){
+   location.hash="#/projects";
+   return;
+  }
+  renderSettings();
  }else if(h.startsWith("project/")){
   state.currentProjectId=decodeURIComponent(h.split("/")[1]||"");
   renderBuilder();
@@ -281,6 +287,109 @@ function render(){
  main.focus({preventScroll:true});
 }
 function renderHome(){main.innerHTML=`<section class="hero"><div class="hero-inner"><p class="eyebrow">CAR PROJECT ORGANIZER</p><h1>Build the car.<br>Keep the story.</h1><p>One workspace for parts, costs, installation dates, build notes, and the decisions that turn a project car into your project car.</p><button class="button primary" data-route="projects">Take me to the editor</button><p class="muted" style="font-size:.82rem;margin-top:18px">${logged()?`Signed in as ${esc(state.profile?.username||state.user.email)}`:"Guest editor — changes disappear on refresh"}</p></div></section>`}
+
+function renderSettings(){
+ const email=state.user?.email||"";
+ const username=state.profile?.username||state.user?.user_metadata?.username||"";
+ main.innerHTML=`<section class="page settings-page"><div class="page-header settings-header"><div><p class="eyebrow">ACCOUNT</p><h1>Settings</h1><p class="muted">Update your RELAY account information.</p></div></div><form id="settingsForm" class="panel settings-panel"><section class="settings-section"><div class="settings-section-copy"><h2>Account information</h2><p class="muted">Change the email address or username associated with your account.</p></div><div class="form-grid settings-grid"><label class="full">Change email<input id="settingsEmail" type="email" autocomplete="email" value="${esc(email)}" required></label><label class="full">Change username<input id="settingsUsername" maxlength="40" autocomplete="username" value="${esc(username)}"></label></div></section><section class="settings-section"><div class="settings-section-copy"><h2>Change password</h2><p class="muted">Enter your current password before choosing a new password.</p></div><div class="form-grid settings-grid"><label class="full">Enter old password<input id="settingsOldPassword" type="password" autocomplete="current-password" minlength="6"></label><label class="full">Enter new password<input id="settingsNewPassword" type="password" autocomplete="new-password" minlength="6"></label></div></section><p id="settingsError" class="error-text settings-error" hidden></p><div class="settings-actions"><button type="submit" class="button primary" id="settingsApply">Apply</button></div></form></section>`;
+ $("#settingsForm")?.addEventListener("submit",saveAccountSettings);
+}
+
+async function saveAccountSettings(event){
+ event.preventDefault();
+ if(!logged()||!state.supabase)return;
+
+ const email=$("#settingsEmail").value.trim();
+ const username=$("#settingsUsername").value.trim();
+ const oldPassword=$("#settingsOldPassword").value;
+ const newPassword=$("#settingsNewPassword").value;
+ const errorText=$("#settingsError");
+ const applyButton=$("#settingsApply");
+ const currentEmail=state.user.email||"";
+ const currentUsername=state.profile?.username||state.user?.user_metadata?.username||"";
+ const emailChanged=email!==currentEmail;
+ const usernameChanged=username!==currentUsername;
+ const passwordChanged=Boolean(oldPassword||newPassword);
+
+ errorText.hidden=true;
+ errorText.textContent="";
+
+ if(passwordChanged&&(!oldPassword||!newPassword)){
+  errorText.textContent="Enter both your old password and your new password.";
+  errorText.hidden=false;
+  return;
+ }
+ if(newPassword&&newPassword.length<6){
+  errorText.textContent="New password must be at least 6 characters.";
+  errorText.hidden=false;
+  return;
+ }
+ if(!emailChanged&&!usernameChanged&&!passwordChanged){
+  notify("No account changes to apply.");
+  return;
+ }
+
+ applyButton.disabled=true;
+ applyButton.textContent="Applying…";
+
+ try{
+  if(passwordChanged){
+   const verifier=window.supabase.createClient(config.url,config.anonKey,{
+    auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},
+   });
+   const verify=await verifier.auth.signInWithPassword({email:currentEmail,password:oldPassword});
+   if(verify.error)throw new Error("Your old password is incorrect.");
+   await verifier.auth.signOut();
+  }
+
+  const authUpdates={};
+  if(emailChanged)authUpdates.email=email;
+  if(newPassword)authUpdates.password=newPassword;
+  if(usernameChanged)authUpdates.data={
+   ...(state.user.user_metadata||{}),
+   username:username||null,
+   display_name:username||null,
+  };
+
+  if(Object.keys(authUpdates).length){
+   const authResult=await state.supabase.auth.updateUser(authUpdates);
+   if(authResult.error)throw authResult.error;
+   if(authResult.data?.user)state.user=authResult.data.user;
+  }
+
+  if(usernameChanged){
+   const profileResult=await state.supabase
+    .from("profiles")
+    .update({username:username||null})
+    .eq("id",state.user.id)
+    .select("*")
+    .maybeSingle();
+   if(profileResult.error)throw profileResult.error;
+   state.profile=profileResult.data||{...(state.profile||{}),username:username||null};
+  }
+
+  $("#settingsOldPassword").value="";
+  $("#settingsNewPassword").value="";
+
+  if(emailChanged&&state.user.email!==email){
+   notify("Changes applied. Check your email to confirm the new address.");
+  }else{
+   notify("Account settings updated.");
+  }
+  renderSettings();
+ }catch(error){
+  console.error(error);
+  if(!document.body.contains(errorText))renderSettings();
+  const currentError=$("#settingsError");
+  if(currentError){
+   currentError.textContent=error.message||"Could not update your account settings.";
+   currentError.hidden=false;
+  }
+ }finally{
+  const button=$("#settingsApply");
+  if(button){button.disabled=false;button.textContent="Apply";}
+ }
+}
 function renderProjects(){
  const ps=[...state.projects].sort((a,b)=>state.sort==="cost"?(b.total_cost??total(b))-(a.total_cost??total(a)):state.sort==="mods"?(b.part_count??b.parts?.length??0)-(a.part_count??a.parts?.length??0):new Date(b.updated_at||b.updatedAt)-new Date(a.updated_at||a.updatedAt));
  main.innerHTML=`<section class="page"><div class="page-header"><div><p class="eyebrow">WORKSPACE</p><h1>Your projects</h1><p class="muted">${logged()?"Persistent projects linked to your account.":"Guest mode is temporary. Sign in to persist projects."}</p></div><button class="button primary" data-action="new-project">New project</button></div>${!configured()?`<div class="warning">Supabase is not configured. Add your project URL and publishable/anon key to <code>app.js</code> after running the SQL schema.</div>`:""}<div class="toolbar"><label class="muted">Sort by <select class="select" id="sortSelect"><option value="updated">Recency</option><option value="cost">Total cost</option><option value="mods">Modification amount</option></select></label><button class="button ghost" data-action="import-prompt">Import</button><button class="button ghost" data-action="export">Export</button></div><div class="project-list">${ps.length?ps.map(projectCard).join(""):`<div class="empty"><h2>No projects yet</h2><p class="muted">Start your first build.</p></div>`}</div></section>`;
@@ -619,13 +728,14 @@ function importData(file){const r=new FileReader();r.onerror=()=>notify("Could n
   case"export":exportData();break;
   case"import-prompt":$("#importInput").click();break;
   case"auth":if(state.user)document.querySelector(".account-menu")?.remove()||showAccountMenu();else $("#authDialog").showModal();break;
+  case"settings":document.querySelector(".account-menu")?.remove();location.hash="#/settings";break;
   case"mode":state.editMode=a.dataset.mode==="edit";renderBuilder();break;
   case"add-part":openPart();break;
   case"logs":state.currentProject.showAllLogs=!state.currentProject.showAllLogs;renderBuilder();break;
   case"signout":signOut();break;
  }
 });
-function showAccountMenu(){const m=document.createElement("div");m.className="account-menu";m.innerHTML=`<div class="muted" style="padding:7px 10px">${esc(state.profile?.username||state.user.email)}</div><button data-action="signout">Sign out</button>`;document.body.appendChild(m)}
+function showAccountMenu(){const m=document.createElement("div");m.className="account-menu";m.innerHTML=`<div class="muted" style="padding:7px 10px">${esc(state.profile?.username||state.user.email)}</div><button data-action="settings">Settings</button><button data-action="signout">Sign out</button>`;document.body.appendChild(m)}
 $("#projectForm").addEventListener("submit",saveProject);$("#deleteProjectButton").addEventListener("click",deleteProject);$("#partForm").addEventListener("submit",savePart);$("#deletePartButton").addEventListener("click",deletePart);$("#authForm").addEventListener("submit",authSubmit);
 $("#toggleAuth").addEventListener("click",()=>{state.authMode=state.authMode==="login"?"signup":"login";const s=state.authMode==="signup";$("#authTitle").textContent=s?"Create account":"Sign in";$("#authSubmit").textContent=s?"Create account":"Sign in";$("#toggleAuth").textContent=s?"Back to sign in":"Create account";$("#usernameWrap").hidden=!s});
 
