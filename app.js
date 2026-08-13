@@ -43,6 +43,7 @@
     currentConnectBuildId: null,
     currentConnectBuild: null,
     timelineProjectId: null,
+    timelineMode: "view",
   };
 
   const $ = (selector) => document.querySelector(selector);
@@ -398,12 +399,28 @@ function renderProjects(){
 function projectCard(p){const vehicle=vehicleLabel(p);return`<article class="project-card" data-open-project="${esc(p.id)}" tabindex="0" role="button"><img class="thumb" src="${esc(p.image_url||p.image||FALLBACK_IMAGE)}" alt=""><div><h3>${esc(p.name)}</h3><div class="project-card-vehicle ${vehicle?"":"missing"}">${esc(vehicle||"Vehicle details not set")}</div><div class="meta">Last modified ${esc(dateText(p.updated_at||p.updatedAt))}${p.is_public?' · Public':''}</div><div class="project-hover">${esc(p.description||"No description yet.")}<br>${esc(dateText(p.start_date||p.startDate))} · ${p.part_count??p.parts?.length??0} modifications</div></div><div class="project-total">${money(p.total_cost??total(p))}</div></article>`}
 
 
+function timelineModeToggle({disabled=false}={}) {
+ const planning=state.timelineMode==="planning";
+ return`<label class="timeline-mode-toggle ${disabled?"disabled":""}" title="${disabled?"Planning Mode is available when signed in.":planning?"Switch to View mode":"Switch to Planning Mode"}"><span class="timeline-mode-copy"><strong>${planning?"Planning Mode":"View mode"}</strong></span><input type="checkbox" role="switch" data-action="timeline-mode" ${planning?"checked":""} ${disabled?"disabled":""} aria-label="${planning?"Switch to View mode":"Switch to Planning Mode"}"></label>`;
+}
+
 function timelineProjectPicker(selectedProject) {
  const selectedImage=selectedProject?projectImageUrl(selectedProject.image_url||selectedProject.image):"";
  return`<div class="timeline-picker"><button type="button" class="timeline-picker-button" data-action="timeline-toggle" aria-haspopup="listbox" aria-expanded="false">${selectedProject?`<span class="timeline-picker-project"><img src="${esc(selectedImage)}" alt=""><span>${esc(selectedProject.name||"Untitled project")}</span></span>`:`<span class="timeline-picker-placeholder">Select a project</span>`}<span class="timeline-picker-chevron" aria-hidden="true">⌄</span></button><div class="timeline-project-menu" id="timelineProjectMenu" role="listbox" aria-label="Select a project" hidden>${state.projects.length?state.projects.map(project=>`<button type="button" class="timeline-project-option ${selectedProject?.id===project.id?"selected":""}" data-timeline-project="${esc(project.id)}" role="option" aria-selected="${selectedProject?.id===project.id?"true":"false"}"><img src="${esc(projectImageUrl(project.image_url||project.image))}" alt=""><span>${esc(project.name||"Untitled project")}</span></button>`).join(""):`<div class="timeline-project-empty muted">No projects available.</div>`}</div></div>`;
 }
 
-function timelineBaseLine(startDate=null, events=[]) {
+function timelineBaseLine(startDate=null, events=[], {planningMode=false,objectives=[]}={}) {
+ if(planningMode){
+  const active=[...(objectives||[])].filter(item=>!item.objective_completed).sort((a,b)=>String(a.deadline||"").localeCompare(String(b.deadline||""))||String(a.created_at||"").localeCompare(String(b.created_at||"")));
+  const dots=active.map((objective,index)=>{
+   const position=((index+1)/(active.length+1))*100;
+   const edgeClass=position<16?"near-start":position>84?"near-end":"";
+   return`<div class="timeline-event-dot timeline-objective-dot ${edgeClass}" style="--timeline-position:${position}%" role="button" tabindex="0" aria-label="Objective ${esc(objective.objective_name||"Untitled objective")}, deadline ${esc(numericDateText(objective.deadline))}"><div class="timeline-event-popover"><article class="timeline-event-tile timeline-objective-tile"><div class="timeline-event-date">Deadline ${esc(numericDateText(objective.deadline))}</div><strong>${esc(objective.objective_name||"Untitled objective")}</strong><p>${esc(objective.additional_notes||"No additional notes.")}</p></article></div></div>`;
+  }).join("");
+  const today=todayKey();
+  return`<div class="timeline-stage-scroll"><div class="timeline-stage timeline-stage-planning"><div class="timeline-track"><span class="timeline-line" aria-hidden="true"></span><span class="timeline-endpoint timeline-endpoint-start" aria-hidden="true"></span>${dots}<div class="timeline-end-label timeline-end-label-start"><strong>Today</strong><span>${esc(numericDateText(today))}</span></div></div></div></div>`;
+ }
+
  const startKey=localDateKey(startDate);
  const endKey=todayKey();
  const start=dateFromKey(startKey);
@@ -448,48 +465,115 @@ function timelineEventGroups(project) {
  return[...byDate.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([date,items])=>({date,items}));
 }
 
+function timelineObjectiveCard(objective,{completed=false}={}){
+ const completion=completed?`<span>Completed ${esc(numericDateText(objective.objective_completed_date))}</span>`:`<span>Deadline ${esc(numericDateText(objective.deadline))}</span>`;
+ return`<article class="timeline-objective-card ${completed?"completed":""}"><div class="timeline-objective-main"><div class="timeline-objective-meta">${completion}</div><h3>${esc(objective.objective_name||"Untitled objective")}</h3>${objective.additional_notes?`<p>${esc(objective.additional_notes)}</p>`:""}</div>${completed?"":`<button type="button" class="button primary timeline-objective-complete" data-action="complete-objective" data-objective-id="${esc(objective.id)}">Mark as completed</button>`}</article>`;
+}
+
+function timelineObjectivesSection(project){
+ if(!project)return`<section class="timeline-objectives"><div class="timeline-objective-section"><div class="timeline-objective-heading"><h2>Current objectives</h2></div><div class="timeline-objective-empty muted">Select a project to view its objectives.</div></div><div class="timeline-objective-section completed-section"><div class="timeline-objective-heading"><h2>Completed objectives</h2></div><div class="timeline-objective-empty muted">Select a project to view completed objectives.</div></div></section>`;
+ const objectives=[...(project.objectives||[])];
+ const current=objectives.filter(item=>!item.objective_completed).sort((a,b)=>String(a.deadline||"").localeCompare(String(b.deadline||""))||String(a.created_at||"").localeCompare(String(b.created_at||"")));
+ const completed=objectives.filter(item=>item.objective_completed).sort((a,b)=>String(b.objective_completed_date||"").localeCompare(String(a.objective_completed_date||""))||String(b.updated_at||"").localeCompare(String(a.updated_at||"")));
+ return`<section class="timeline-objectives"><div class="timeline-objective-section"><div class="timeline-objective-heading"><h2>Current objectives</h2><span class="muted">${current.length}</span></div><div class="timeline-objective-list">${current.length?current.map(item=>timelineObjectiveCard(item)).join(""):`<div class="timeline-objective-empty muted">No current objectives for this project.</div>`}</div></div><div class="timeline-objective-section completed-section"><div class="timeline-objective-heading"><h2>Completed objectives</h2><span class="muted">${completed.length}</span></div><div class="timeline-objective-list">${completed.length?completed.map(item=>timelineObjectiveCard(item,{completed:true})).join(""):`<div class="timeline-objective-empty muted">No completed objectives yet.</div>`}</div></div></section>`;
+}
+
+function timelinePlanButton(hasProject){
+ if(state.timelineMode!=="planning")return"";
+ return`<div class="timeline-plan-actions"><button type="button" class="button primary timeline-plan-button" data-action="plan-objective" ${hasProject?"":"disabled"}>Let’s Plan</button></div>`;
+}
+
 async function loadTimelineProject(id){
  if(!logged()||!id)return null;
  return safe(async()=>{
   const projectResult=await state.supabase.from("projects").select("*").eq("id",id).single();
   if(projectResult.error)throw projectResult.error;
-  const [partsResult,logsResult]=await Promise.all([
+  const [partsResult,logsResult,objectivesResult]=await Promise.all([
    state.supabase.from("parts").select("*").eq("project_id",id).order("install_date",{ascending:true}),
    state.supabase.from("build_logs").select("*").eq("project_id",id).order("created_at",{ascending:true}),
+   state.supabase.from("objectives").select("*").eq("project_id",id).order("deadline",{ascending:true}),
   ]);
   if(partsResult.error)throw partsResult.error;
   if(logsResult.error)throw logsResult.error;
-  return{...projectResult.data,parts:partsResult.data||[],logs:logsResult.data||[]};
+  if(objectivesResult.error)throw objectivesResult.error;
+  return{...projectResult.data,parts:partsResult.data||[],logs:logsResult.data||[],objectives:objectivesResult.data||[]};
  },"Could not load this project timeline.");
+}
+
+function openObjectiveDialog(){
+ if(!logged()||!state.timelineProjectId)return;
+ const dialog=$("#objectiveDialog");
+ $("#objectiveProjectId").value=state.timelineProjectId;
+ $("#objectiveName").value="";
+ $("#objectiveDeadline").value="";
+ $("#objectiveNotes").value="";
+ dialog?.showModal();
+}
+
+async function saveObjective(event){
+ event.preventDefault();
+ if(!logged()||!state.supabase)return;
+ const form=$("#objectiveForm");
+ if(Number(form?.dataset.currentStep||1)<3){$("#objectiveNextButton")?.click();return;}
+ const projectId=$("#objectiveProjectId")?.value||state.timelineProjectId;
+ const objectiveName=$("#objectiveName")?.value.trim();
+ const deadline=$("#objectiveDeadline")?.value||null;
+ const notes=$("#objectiveNotes")?.value.trim()||null;
+ if(!projectId||!objectiveName||!deadline)return;
+ const result=await safe(async()=>{
+  const query=await state.supabase.from("objectives").insert({project_id:projectId,objective_name:objectiveName,deadline,additional_notes:notes}).select().single();
+  if(query.error)throw query.error;
+  return query.data;
+ },"Could not save this objective.");
+ if(!result)return;
+ $("#objectiveDialog")?.close();
+ await touch(projectId);
+ notify("Objective added to your future timeline.");
+ renderTimeline();
+}
+
+async function completeObjective(objectiveId){
+ if(!logged()||!state.supabase||!objectiveId||!state.timelineProjectId)return;
+ const result=await safe(async()=>{
+  const query=await state.supabase.rpc("complete_objective",{p_objective_id:objectiveId});
+  if(query.error)throw query.error;
+  return query.data;
+ },"Could not mark this objective as completed.");
+ if(result===null)return;
+ await touch(state.timelineProjectId);
+ notify("Objective completed and added to your build log.");
+ renderTimeline();
 }
 
 async function renderTimeline(){
  const routeAtStart=location.hash.replace(/^#\/?/,"");
  if(!logged()){
   state.timelineProjectId=null;
-  main.innerHTML=`<section class="page timeline-page timeline-disabled"><div class="page-header timeline-page-header"><div><p class="eyebrow">TIMELINE</p><h1>Timeline Disabled</h1><p class="muted">Timeline is available with a RELAY account. Please log in to continue</p><button class="button primary timeline-signin" data-action="timeline-signin">Sign in</button></div></div>${timelineBaseLine()}</section>`;
+  state.timelineMode="view";
+  main.innerHTML=`<section class="page timeline-page timeline-disabled"><div class="page-header timeline-page-header"><div><p class="eyebrow">TIMELINE</p><h1>Timeline Disabled</h1><p class="muted">Timeline is available with a RELAY account. Please log in to continue</p><button class="button primary timeline-signin" data-action="timeline-signin">Sign in</button></div>${timelineModeToggle({disabled:true})}</div>${timelineBaseLine()}${timelineObjectivesSection(null)}</section>`;
   return;
  }
 
  let selectedSummary=state.projects.find(project=>project.id===state.timelineProjectId)||null;
  if(state.timelineProjectId&&!selectedSummary)state.timelineProjectId=null;
  selectedSummary=state.projects.find(project=>project.id===state.timelineProjectId)||null;
- const pageTop=`<div class="page-header timeline-page-header"><div><p class="eyebrow">TIMELINE</p><h1>Your Project Timeline</h1><p class="muted">Select a project to view its timeline</p></div></div>${timelineProjectPicker(selectedSummary)}`;
+ const planning=state.timelineMode==="planning";
+ const pageTop=`<div class="page-header timeline-page-header"><div><p class="eyebrow">TIMELINE</p><h1>${planning?"Your Future Timeline":"Your Project Timeline"}</h1><p class="muted">${planning?"Let’s plan out your build! Select a car to begin.":"Select a project to view its timeline"}</p></div>${timelineModeToggle()}</div>${timelineProjectPicker(selectedSummary)}`;
 
  if(!selectedSummary){
-  main.innerHTML=`<section class="page timeline-page">${pageTop}${timelineBaseLine()}</section>`;
+  main.innerHTML=`<section class="page timeline-page ${planning?"timeline-planning-mode":""}">${pageTop}${timelineBaseLine(null,[],{planningMode:planning})}${timelinePlanButton(false)}${timelineObjectivesSection(null)}</section>`;
   return;
  }
 
- main.innerHTML=`<section class="page timeline-page">${pageTop}<div class="timeline-loading">Loading timeline…</div></section>`;
+ main.innerHTML=`<section class="page timeline-page ${planning?"timeline-planning-mode":""}">${pageTop}<div class="timeline-loading">Loading timeline…</div></section>`;
  const project=await loadTimelineProject(selectedSummary.id);
  if(location.hash.replace(/^#\/?/,"")!==routeAtStart||state.timelineProjectId!==selectedSummary.id)return;
  if(!project){
-  main.innerHTML=`<section class="page timeline-page">${pageTop}<div class="warning">This project timeline could not be loaded.</div>${timelineBaseLine(selectedSummary.start_date)}</section>`;
+  main.innerHTML=`<section class="page timeline-page ${planning?"timeline-planning-mode":""}">${pageTop}<div class="warning">This project timeline could not be loaded.</div>${timelineBaseLine(selectedSummary.start_date,[],{planningMode:planning})}${timelinePlanButton(true)}${timelineObjectivesSection(null)}</section>`;
   return;
  }
  const groups=timelineEventGroups(project);
- main.innerHTML=`<section class="page timeline-page">${pageTop}${timelineBaseLine(project.start_date,groups)}</section>`;
+ main.innerHTML=`<section class="page timeline-page ${planning?"timeline-planning-mode":""}">${pageTop}${timelineBaseLine(project.start_date,groups,{planningMode:planning,objectives:project.objectives})}${timelinePlanButton(true)}${timelineObjectivesSection(project)}</section>`;
 }
 
 function closeTimelineMenu(){
@@ -724,6 +808,9 @@ function importData(file){const r=new FileReader();r.onerror=()=>notify("Could n
   case"new-project":openProjectDialog();break;
   case"edit-project":openProjectDialog(state.currentProject);break;
   case"timeline-toggle":{const menu=$("#timelineProjectMenu");if(menu){const next=menu.hidden;menu.hidden=!next;a.setAttribute("aria-expanded",next?"true":"false")}break}
+  case"timeline-mode":if(logged()){state.timelineMode=a.checked?"planning":"view";closeTimelineMenu();renderTimeline()}break;
+  case"plan-objective":openObjectiveDialog();break;
+  case"complete-objective":completeObjective(a.dataset.objectiveId);break;
   case"timeline-signin":state.authMode="login";$("#authTitle").textContent="Sign in";$("#authSubmit").textContent="Sign in";$("#toggleAuth").textContent="Create account";$("#usernameWrap").hidden=true;$("#authEmail").value="";$("#authPassword").value="";$("#authUsername").value="";$("#authError").textContent="";$("#authError").hidden=true;$("#authDialog").showModal();break;
   case"export":exportData();break;
   case"import-prompt":$("#importInput").click();break;
@@ -736,7 +823,7 @@ function importData(file){const r=new FileReader();r.onerror=()=>notify("Could n
  }
 });
 function showAccountMenu(){const m=document.createElement("div");m.className="account-menu";m.innerHTML=`<div class="muted" style="padding:7px 10px">${esc(state.profile?.username||state.user.email)}</div><button data-action="settings">Settings</button><button data-action="signout">Sign out</button>`;document.body.appendChild(m)}
-$("#projectForm").addEventListener("submit",saveProject);$("#deleteProjectButton").addEventListener("click",deleteProject);$("#partForm").addEventListener("submit",savePart);$("#deletePartButton").addEventListener("click",deletePart);$("#authForm").addEventListener("submit",authSubmit);
+$("#projectForm").addEventListener("submit",saveProject);$("#deleteProjectButton").addEventListener("click",deleteProject);$("#partForm").addEventListener("submit",savePart);$("#deletePartButton").addEventListener("click",deletePart);$("#objectiveForm")?.addEventListener("submit",saveObjective);$("#authForm").addEventListener("submit",authSubmit);
 $("#toggleAuth").addEventListener("click",()=>{state.authMode=state.authMode==="login"?"signup":"login";const s=state.authMode==="signup";$("#authTitle").textContent=s?"Create account":"Sign in";$("#authSubmit").textContent=s?"Create account":"Sign in";$("#toggleAuth").textContent=s?"Back to sign in":"Create account";$("#usernameWrap").hidden=!s});
 
 $("#projectPublic")?.addEventListener("change",e=>{

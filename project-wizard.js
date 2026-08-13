@@ -703,3 +703,147 @@
 
   setStep(1, { focus: false });
 })();
+
+(() => {
+  "use strict";
+
+  const dialog = document.getElementById("objectiveDialog");
+  const form = document.getElementById("objectiveForm");
+  if (!dialog || !form) return;
+
+  const steps = [...form.querySelectorAll("[data-objective-step]")];
+  const progress = [...form.querySelectorAll("[data-objective-progress-step]")];
+  const stepNumber = document.getElementById("objectiveStepNumber");
+  const previousButton = document.getElementById("objectivePreviousButton");
+  const nextButton = document.getElementById("objectiveNextButton");
+  const saveButton = document.getElementById("objectiveSaveButton");
+  const nameInput = document.getElementById("objectiveName");
+  const deadlineInput = document.getElementById("objectiveDeadline");
+
+  let currentStep = 1;
+
+  function validateStep(step) {
+    if (step === 1 && nameInput && !nameInput.checkValidity()) {
+      nameInput.reportValidity();
+      return false;
+    }
+
+    if (step === 2 && deadlineInput) {
+      if (!deadlineInput.checkValidity()) {
+        deadlineInput.reportValidity();
+        return false;
+      }
+
+      const today = new Date();
+      const y = today.getFullYear();
+      const m = String(today.getMonth() + 1).padStart(2, "0");
+      const d = String(today.getDate()).padStart(2, "0");
+      const todayKey = `${y}-${m}-${d}`;
+      if (deadlineInput.value < todayKey) {
+        deadlineInput.setCustomValidity("Choose today or a future date.");
+        deadlineInput.reportValidity();
+        deadlineInput.setCustomValidity("");
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  function setStep(step, { focus = true } = {}) {
+    const target = Math.min(3, Math.max(1, Number(step) || 1));
+    currentStep = target;
+    form.dataset.currentStep = String(target);
+
+    steps.forEach((panel) => {
+      panel.hidden = Number(panel.dataset.objectiveStep) !== target;
+    });
+
+    progress.forEach((bar) => {
+      bar.classList.toggle("active", Number(bar.dataset.objectiveProgressStep) <= target);
+    });
+
+    if (stepNumber) stepNumber.textContent = String(target);
+    if (previousButton) previousButton.disabled = target === 1;
+    if (nextButton) nextButton.hidden = target === 3;
+    if (saveButton) saveButton.hidden = target !== 3;
+
+    if (focus) {
+      const active = steps.find((panel) => Number(panel.dataset.objectiveStep) === target);
+      active
+        ?.querySelector("input:not([type=hidden]):not(:disabled), textarea:not(:disabled)")
+        ?.focus({ preventScroll: true });
+    }
+  }
+
+  previousButton?.addEventListener("click", () => setStep(currentStep - 1));
+
+  nextButton?.addEventListener("click", () => {
+    if (!validateStep(currentStep)) return;
+    setStep(currentStep + 1);
+  });
+
+  // Prevent implicit <form method="dialog"> submission from skipping wizard steps.
+  // Textareas remain multiline; Enter in Steps 1-2 behaves exactly like Next.
+  dialog.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.defaultPrevented || event.isComposing) return;
+    if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+
+    const target = event.target;
+    const tagName = target?.tagName?.toLowerCase();
+    if (tagName === "textarea" || target?.isContentEditable) return;
+    if (tagName === "button" || tagName === "a") return;
+
+    if (currentStep < 3) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (!validateStep(currentStep)) return;
+      setStep(currentStep + 1);
+      return;
+    }
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    form.requestSubmit(saveButton || undefined);
+  }, true);
+
+  // Safety net for browser/autofill/programmatic submits: Steps 1-2 can never
+  // reach app.js's saveObjective() listener before the wizard is finished.
+  form.addEventListener("submit", (event) => {
+    if (currentStep < 3) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (!validateStep(currentStep)) return;
+      setStep(currentStep + 1);
+      return;
+    }
+
+    for (const step of [1, 2]) {
+      if (!validateStep(step)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setStep(step);
+        return;
+      }
+    }
+  }, true);
+
+  const openObserver = new MutationObserver(() => {
+    if (!dialog.open) return;
+    const now = new Date();
+    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    if (deadlineInput) deadlineInput.min = todayKey;
+    setStep(1, { focus: false });
+    requestAnimationFrame(() => setStep(1));
+  });
+
+  openObserver.observe(dialog, { attributes: true, attributeFilter: ["open"] });
+
+  dialog.addEventListener("close", () => {
+    form.reset();
+    document.getElementById("objectiveProjectId").value = "";
+    setStep(1, { focus: false });
+  });
+
+  setStep(1, { focus: false });
+})();
