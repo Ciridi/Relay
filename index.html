@@ -12,6 +12,7 @@
       <a class="brand" href="#/">RELAY</a>
       <nav class="topnav" aria-label="Primary navigation">
         <button class="nav-link" data-route="projects">Projects</button>
+        <button class="nav-link timeline-nav" data-route="timeline">Timeline</button>
         <button class="nav-link connect-nav" data-route="connect">Connect</button>
         <button class="nav-link" data-action="auth" id="authButton">Account</button>
       </nav>
@@ -325,6 +326,77 @@
         <button type="button" class="button ghost" id="partPreviousButton" disabled>Previous</button>
         <button type="button" class="button primary" id="partNextButton">Next</button>
         <button type="submit" class="button primary" id="partSaveButton" hidden>Save part</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="objectiveDialog" class="modal objective-modal">
+    <form method="dialog" id="objectiveForm" class="modal-card objective-wizard">
+      <button
+        type="button"
+        class="icon-button close-button"
+        data-dialog-close
+        aria-label="Close"
+      >×</button>
+
+      <p class="eyebrow">
+        PLAN · STEP <span id="objectiveStepNumber">1</span> OF 3
+      </p>
+      <h2 id="objectiveDialogTitle">Plan objective</h2>
+      <input type="hidden" id="objectiveProjectId">
+
+      <div class="wizard-progress objective-wizard-progress" aria-hidden="true">
+        <span class="active" data-objective-progress-step="1"></span>
+        <span data-objective-progress-step="2"></span>
+        <span data-objective-progress-step="3"></span>
+      </div>
+
+      <section class="wizard-step objective-wizard-step" data-objective-step="1">
+        <div class="wizard-heading">
+          <h3>Objective</h3>
+          <p class="muted">What are you planning to do?</p>
+        </div>
+        <div class="form-grid">
+          <label class="full">
+            Objective
+            <input id="objectiveName" required maxlength="160" autocomplete="off" placeholder="e.g. Install coilovers">
+          </label>
+        </div>
+      </section>
+
+      <section class="wizard-step objective-wizard-step" data-objective-step="2" hidden>
+        <div class="wizard-heading">
+          <h3>Deadline</h3>
+          <p class="muted">When are you planning to finish it by?</p>
+        </div>
+        <div class="form-grid">
+          <label class="full">
+            Deadline
+            <input id="objectiveDeadline" type="date" required>
+          </label>
+        </div>
+      </section>
+
+      <section class="wizard-step objective-wizard-step" data-objective-step="3" hidden>
+        <div class="wizard-heading">
+          <h3>Additional Notes</h3>
+          <p class="muted">Parts? Budget? Etc.</p>
+        </div>
+        <div class="form-grid">
+          <label class="full">
+            Notes
+            <textarea id="objectiveNotes" rows="7" maxlength="3000" placeholder="Parts, budget, dependencies, or anything else to remember."></textarea>
+          </label>
+        </div>
+      </section>
+
+      <div class="wizard-actions objective-wizard-actions">
+        <span class="wizard-spacer"></span>
+        <span class="wizard-spacer"></span>
+        <button type="button" class="button ghost" data-dialog-close>Cancel</button>
+        <button type="button" class="button ghost" id="objectivePreviousButton" disabled>Previous</button>
+        <button type="button" class="button primary" id="objectiveNextButton">Next</button>
+        <button type="submit" class="button primary" id="objectiveSaveButton" hidden>Save objective</button>
       </div>
     </form>
   </dialog>

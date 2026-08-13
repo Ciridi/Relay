@@ -42,6 +42,8 @@
     connectCategory: "ENGINE",
     currentConnectBuildId: null,
     currentConnectBuild: null,
+    timelineProjectId: null,
+    timelineMode: "view",
   };
 
   const $ = (selector) => document.querySelector(selector);
@@ -88,6 +90,43 @@
           new Date(value),
         )
       : "—";
+
+  function localDateKey(value) {
+    if (!value) return "";
+
+    const raw = String(value).trim();
+    const dateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (dateOnly) return raw;
+
+    const date = new Date(raw);
+    if (Number.isNaN(date.getTime())) return "";
+
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  function dateFromKey(key) {
+    const match = String(key || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return null;
+    return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  }
+
+  function numericDateText(value) {
+    const key = localDateKey(value);
+    if (!key) return "--/--/----";
+    const [year, month, day] = key.split("-");
+    return `${month}/${day}/${year}`;
+  }
+
+  function todayKey() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
 
   const total = (project) =>
     (project?.parts || []).reduce(
@@ -230,6 +269,14 @@ function render(){
   renderConnectBuild();
  }else if(h==="connect"){
   renderConnect();
+ }else if(h==="timeline"){
+  renderTimeline();
+ }else if(h==="settings"){
+  if(!logged()){
+   location.hash="#/projects";
+   return;
+  }
+  renderSettings();
  }else if(h.startsWith("project/")){
   state.currentProjectId=decodeURIComponent(h.split("/")[1]||"");
   renderBuilder();
@@ -241,12 +288,300 @@ function render(){
  main.focus({preventScroll:true});
 }
 function renderHome(){main.innerHTML=`<section class="hero"><div class="hero-inner"><p class="eyebrow">CAR PROJECT ORGANIZER</p><h1>Build the car.<br>Keep the story.</h1><p>One workspace for parts, costs, installation dates, build notes, and the decisions that turn a project car into your project car.</p><button class="button primary" data-route="projects">Take me to the editor</button><p class="muted" style="font-size:.82rem;margin-top:18px">${logged()?`Signed in as ${esc(state.profile?.username||state.user.email)}`:"Guest editor — changes disappear on refresh"}</p></div></section>`}
+
+function renderSettings(){
+ const email=state.user?.email||"";
+ const username=state.profile?.username||state.user?.user_metadata?.username||"";
+ main.innerHTML=`<section class="page settings-page"><div class="page-header settings-header"><div><p class="eyebrow">ACCOUNT</p><h1>Settings</h1><p class="muted">Update your RELAY account information.</p></div></div><form id="settingsForm" class="panel settings-panel"><section class="settings-section"><div class="settings-section-copy"><h2>Account information</h2><p class="muted">Change the email address or username associated with your account.</p></div><div class="form-grid settings-grid"><label class="full">Change email<input id="settingsEmail" type="email" autocomplete="email" value="${esc(email)}" required></label><label class="full">Change username<input id="settingsUsername" maxlength="40" autocomplete="username" value="${esc(username)}"></label></div></section><section class="settings-section"><div class="settings-section-copy"><h2>Change password</h2><p class="muted">Enter your current password before choosing a new password.</p></div><div class="form-grid settings-grid"><label class="full">Enter old password<input id="settingsOldPassword" type="password" autocomplete="current-password" minlength="6"></label><label class="full">Enter new password<input id="settingsNewPassword" type="password" autocomplete="new-password" minlength="6"></label></div></section><p id="settingsError" class="error-text settings-error" hidden></p><div class="settings-actions"><button type="submit" class="button primary" id="settingsApply">Apply</button></div></form></section>`;
+ $("#settingsForm")?.addEventListener("submit",saveAccountSettings);
+}
+
+async function saveAccountSettings(event){
+ event.preventDefault();
+ if(!logged()||!state.supabase)return;
+
+ const email=$("#settingsEmail").value.trim();
+ const username=$("#settingsUsername").value.trim();
+ const oldPassword=$("#settingsOldPassword").value;
+ const newPassword=$("#settingsNewPassword").value;
+ const errorText=$("#settingsError");
+ const applyButton=$("#settingsApply");
+ const currentEmail=state.user.email||"";
+ const currentUsername=state.profile?.username||state.user?.user_metadata?.username||"";
+ const emailChanged=email!==currentEmail;
+ const usernameChanged=username!==currentUsername;
+ const passwordChanged=Boolean(oldPassword||newPassword);
+
+ errorText.hidden=true;
+ errorText.textContent="";
+
+ if(passwordChanged&&(!oldPassword||!newPassword)){
+  errorText.textContent="Enter both your old password and your new password.";
+  errorText.hidden=false;
+  return;
+ }
+ if(newPassword&&newPassword.length<6){
+  errorText.textContent="New password must be at least 6 characters.";
+  errorText.hidden=false;
+  return;
+ }
+ if(!emailChanged&&!usernameChanged&&!passwordChanged){
+  notify("No account changes to apply.");
+  return;
+ }
+
+ applyButton.disabled=true;
+ applyButton.textContent="Applying…";
+
+ try{
+  if(passwordChanged){
+   const verifier=window.supabase.createClient(config.url,config.anonKey,{
+    auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},
+   });
+   const verify=await verifier.auth.signInWithPassword({email:currentEmail,password:oldPassword});
+   if(verify.error)throw new Error("Your old password is incorrect.");
+   await verifier.auth.signOut();
+  }
+
+  const authUpdates={};
+  if(emailChanged)authUpdates.email=email;
+  if(newPassword)authUpdates.password=newPassword;
+  if(usernameChanged)authUpdates.data={
+   ...(state.user.user_metadata||{}),
+   username:username||null,
+   display_name:username||null,
+  };
+
+  if(Object.keys(authUpdates).length){
+   const authResult=await state.supabase.auth.updateUser(authUpdates);
+   if(authResult.error)throw authResult.error;
+   if(authResult.data?.user)state.user=authResult.data.user;
+  }
+
+  if(usernameChanged){
+   const profileResult=await state.supabase
+    .from("profiles")
+    .update({username:username||null})
+    .eq("id",state.user.id)
+    .select("*")
+    .maybeSingle();
+   if(profileResult.error)throw profileResult.error;
+   state.profile=profileResult.data||{...(state.profile||{}),username:username||null};
+  }
+
+  $("#settingsOldPassword").value="";
+  $("#settingsNewPassword").value="";
+
+  if(emailChanged&&state.user.email!==email){
+   notify("Changes applied. Check your email to confirm the new address.");
+  }else{
+   notify("Account settings updated.");
+  }
+  renderSettings();
+ }catch(error){
+  console.error(error);
+  if(!document.body.contains(errorText))renderSettings();
+  const currentError=$("#settingsError");
+  if(currentError){
+   currentError.textContent=error.message||"Could not update your account settings.";
+   currentError.hidden=false;
+  }
+ }finally{
+  const button=$("#settingsApply");
+  if(button){button.disabled=false;button.textContent="Apply";}
+ }
+}
 function renderProjects(){
  const ps=[...state.projects].sort((a,b)=>state.sort==="cost"?(b.total_cost??total(b))-(a.total_cost??total(a)):state.sort==="mods"?(b.part_count??b.parts?.length??0)-(a.part_count??a.parts?.length??0):new Date(b.updated_at||b.updatedAt)-new Date(a.updated_at||a.updatedAt));
  main.innerHTML=`<section class="page"><div class="page-header"><div><p class="eyebrow">WORKSPACE</p><h1>Your projects</h1><p class="muted">${logged()?"Persistent projects linked to your account.":"Guest mode is temporary. Sign in to persist projects."}</p></div><button class="button primary" data-action="new-project">New project</button></div>${!configured()?`<div class="warning">Supabase is not configured. Add your project URL and publishable/anon key to <code>app.js</code> after running the SQL schema.</div>`:""}<div class="toolbar"><label class="muted">Sort by <select class="select" id="sortSelect"><option value="updated">Recency</option><option value="cost">Total cost</option><option value="mods">Modification amount</option></select></label><button class="button ghost" data-action="import-prompt">Import</button><button class="button ghost" data-action="export">Export</button></div><div class="project-list">${ps.length?ps.map(projectCard).join(""):`<div class="empty"><h2>No projects yet</h2><p class="muted">Start your first build.</p></div>`}</div></section>`;
  $("#sortSelect").value=state.sort;$("#sortSelect").onchange=e=>{state.sort=e.target.value;renderProjects()}
 }
 function projectCard(p){const vehicle=vehicleLabel(p);return`<article class="project-card" data-open-project="${esc(p.id)}" tabindex="0" role="button"><img class="thumb" src="${esc(p.image_url||p.image||FALLBACK_IMAGE)}" alt=""><div><h3>${esc(p.name)}</h3><div class="project-card-vehicle ${vehicle?"":"missing"}">${esc(vehicle||"Vehicle details not set")}</div><div class="meta">Last modified ${esc(dateText(p.updated_at||p.updatedAt))}${p.is_public?' · Public':''}</div><div class="project-hover">${esc(p.description||"No description yet.")}<br>${esc(dateText(p.start_date||p.startDate))} · ${p.part_count??p.parts?.length??0} modifications</div></div><div class="project-total">${money(p.total_cost??total(p))}</div></article>`}
+
+
+function timelineModeToggle({disabled=false}={}) {
+ const planning=state.timelineMode==="planning";
+ return`<label class="timeline-mode-toggle ${disabled?"disabled":""}" title="${disabled?"Planning Mode is available when signed in.":planning?"Switch to View mode":"Switch to Planning Mode"}"><span class="timeline-mode-copy"><strong>${planning?"Planning Mode":"View mode"}</strong></span><input type="checkbox" role="switch" data-action="timeline-mode" ${planning?"checked":""} ${disabled?"disabled":""} aria-label="${planning?"Switch to View mode":"Switch to Planning Mode"}"></label>`;
+}
+
+function timelineProjectPicker(selectedProject) {
+ const selectedImage=selectedProject?projectImageUrl(selectedProject.image_url||selectedProject.image):"";
+ return`<div class="timeline-picker"><button type="button" class="timeline-picker-button" data-action="timeline-toggle" aria-haspopup="listbox" aria-expanded="false">${selectedProject?`<span class="timeline-picker-project"><img src="${esc(selectedImage)}" alt=""><span>${esc(selectedProject.name||"Untitled project")}</span></span>`:`<span class="timeline-picker-placeholder">Select a project</span>`}<span class="timeline-picker-chevron" aria-hidden="true">⌄</span></button><div class="timeline-project-menu" id="timelineProjectMenu" role="listbox" aria-label="Select a project" hidden>${state.projects.length?state.projects.map(project=>`<button type="button" class="timeline-project-option ${selectedProject?.id===project.id?"selected":""}" data-timeline-project="${esc(project.id)}" role="option" aria-selected="${selectedProject?.id===project.id?"true":"false"}"><img src="${esc(projectImageUrl(project.image_url||project.image))}" alt=""><span>${esc(project.name||"Untitled project")}</span></button>`).join(""):`<div class="timeline-project-empty muted">No projects available.</div>`}</div></div>`;
+}
+
+function timelineBaseLine(startDate=null, events=[], {planningMode=false,objectives=[]}={}) {
+ if(planningMode){
+  const active=[...(objectives||[])].filter(item=>!item.objective_completed).sort((a,b)=>String(a.deadline||"").localeCompare(String(b.deadline||""))||String(a.created_at||"").localeCompare(String(b.created_at||"")));
+  const dots=active.map((objective,index)=>{
+   const position=((index+1)/(active.length+1))*100;
+   const edgeClass=position<16?"near-start":position>84?"near-end":"";
+   return`<div class="timeline-event-dot timeline-objective-dot ${edgeClass}" style="--timeline-position:${position}%" role="button" tabindex="0" aria-label="Objective ${esc(objective.objective_name||"Untitled objective")}, deadline ${esc(numericDateText(objective.deadline))}"><div class="timeline-event-popover"><article class="timeline-event-tile timeline-objective-tile"><div class="timeline-event-date">Deadline ${esc(numericDateText(objective.deadline))}</div><strong>${esc(objective.objective_name||"Untitled objective")}</strong><p>${esc(objective.additional_notes||"No additional notes.")}</p></article></div></div>`;
+  }).join("");
+  const today=todayKey();
+  return`<div class="timeline-stage-scroll"><div class="timeline-stage timeline-stage-planning"><div class="timeline-track"><span class="timeline-line" aria-hidden="true"></span><span class="timeline-endpoint timeline-endpoint-start" aria-hidden="true"></span>${dots}<div class="timeline-end-label timeline-end-label-start"><strong>Today</strong><span>${esc(numericDateText(today))}</span></div></div></div></div>`;
+ }
+
+ const startKey=localDateKey(startDate);
+ const endKey=todayKey();
+ const start=dateFromKey(startKey);
+ const end=dateFromKey(endKey);
+ const startTime=start?.getTime();
+ const endTime=end?.getTime();
+ const span=start&&end?Math.max(1,endTime-startTime):1;
+ const dots=events.map(group=>{
+  const eventDate=dateFromKey(group.date);
+  let position=50;
+  if(start&&end&&eventDate){
+   position=((eventDate.getTime()-startTime)/span)*100;
+   position=Math.min(100,Math.max(0,position));
+  }
+  const edgeClass=position<16?"near-start":position>84?"near-end":"";
+  return`<div class="timeline-event-dot ${edgeClass}" style="--timeline-position:${position}%" role="button" tabindex="0" aria-label="${esc(group.items.length)} timeline ${group.items.length===1?"event":"events"} on ${esc(numericDateText(group.date))}"><div class="timeline-event-popover">${group.items.map(item=>timelineEventTile(item)).join("")}</div></div>`;
+ }).join("");
+ return`<div class="timeline-stage-scroll"><div class="timeline-stage"><div class="timeline-track"><span class="timeline-line" aria-hidden="true"></span><span class="timeline-endpoint timeline-endpoint-start" aria-hidden="true"></span><span class="timeline-endpoint timeline-endpoint-today" aria-hidden="true"></span>${dots}<div class="timeline-end-label timeline-end-label-start"><strong>Project Start Date</strong><span>${esc(numericDateText(startDate))}</span></div><div class="timeline-end-label timeline-end-label-today"><strong>Today</strong><span>${esc(numericDateText(endKey))}</span></div></div></div></div>`;
+}
+
+function timelineEventTile(item) {
+ if(item.type==="part"){
+  return`<article class="timeline-event-tile"><div class="timeline-event-date">${esc(numericDateText(item.date))}</div><strong>${esc(item.name||"Unnamed part")}</strong><p>${esc(item.description||"No description added.")}</p></article>`;
+ }
+ return`<article class="timeline-event-tile"><div class="timeline-event-date">${esc(numericDateText(item.date))}</div><p>${esc(item.text||"No post text.")}</p></article>`;
+}
+
+function timelineEventGroups(project) {
+ const byDate=new Map();
+ const add=(date,item)=>{
+  const key=localDateKey(date);
+  if(!key)return;
+  if(!byDate.has(key))byDate.set(key,[]);
+  byDate.get(key).push({...item,date:key});
+ };
+ (project.parts||[]).forEach(part=>{
+  if(part.install_date)add(part.install_date,{type:"part",name:part.name,description:part.description||part.notes||""});
+ });
+ (project.logs||[]).forEach(log=>{
+  if(log.created_at)add(log.created_at,{type:"post",text:log.text||""});
+ });
+ return[...byDate.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([date,items])=>({date,items}));
+}
+
+function timelineObjectiveCard(objective,{completed=false}={}){
+ const completion=completed?`<span>Completed ${esc(numericDateText(objective.objective_completed_date))}</span>`:`<span>Deadline ${esc(numericDateText(objective.deadline))}</span>`;
+ return`<article class="timeline-objective-card ${completed?"completed":""}"><div class="timeline-objective-main"><div class="timeline-objective-meta">${completion}</div><h3>${esc(objective.objective_name||"Untitled objective")}</h3>${objective.additional_notes?`<p>${esc(objective.additional_notes)}</p>`:""}</div>${completed?"":`<button type="button" class="button primary timeline-objective-complete" data-action="complete-objective" data-objective-id="${esc(objective.id)}">Mark as completed</button>`}</article>`;
+}
+
+function timelineObjectivesSection(project){
+ if(!project)return`<section class="timeline-objectives"><div class="timeline-objective-section"><div class="timeline-objective-heading"><h2>Current objectives</h2></div><div class="timeline-objective-empty muted">Select a project to view its objectives.</div></div><div class="timeline-objective-section completed-section"><div class="timeline-objective-heading"><h2>Completed objectives</h2></div><div class="timeline-objective-empty muted">Select a project to view completed objectives.</div></div></section>`;
+ const objectives=[...(project.objectives||[])];
+ const current=objectives.filter(item=>!item.objective_completed).sort((a,b)=>String(a.deadline||"").localeCompare(String(b.deadline||""))||String(a.created_at||"").localeCompare(String(b.created_at||"")));
+ const completed=objectives.filter(item=>item.objective_completed).sort((a,b)=>String(b.objective_completed_date||"").localeCompare(String(a.objective_completed_date||""))||String(b.updated_at||"").localeCompare(String(a.updated_at||"")));
+ return`<section class="timeline-objectives"><div class="timeline-objective-section"><div class="timeline-objective-heading"><h2>Current objectives</h2><span class="muted">${current.length}</span></div><div class="timeline-objective-list">${current.length?current.map(item=>timelineObjectiveCard(item)).join(""):`<div class="timeline-objective-empty muted">No current objectives for this project.</div>`}</div></div><div class="timeline-objective-section completed-section"><div class="timeline-objective-heading"><h2>Completed objectives</h2><span class="muted">${completed.length}</span></div><div class="timeline-objective-list">${completed.length?completed.map(item=>timelineObjectiveCard(item,{completed:true})).join(""):`<div class="timeline-objective-empty muted">No completed objectives yet.</div>`}</div></div></section>`;
+}
+
+function timelinePlanButton(hasProject){
+ if(state.timelineMode!=="planning")return"";
+ return`<div class="timeline-plan-actions"><button type="button" class="button primary timeline-plan-button" data-action="plan-objective" ${hasProject?"":"disabled"}>Let’s Plan</button></div>`;
+}
+
+async function loadTimelineProject(id){
+ if(!logged()||!id)return null;
+ return safe(async()=>{
+  const projectResult=await state.supabase.from("projects").select("*").eq("id",id).single();
+  if(projectResult.error)throw projectResult.error;
+  const [partsResult,logsResult,objectivesResult]=await Promise.all([
+   state.supabase.from("parts").select("*").eq("project_id",id).order("install_date",{ascending:true}),
+   state.supabase.from("build_logs").select("*").eq("project_id",id).order("created_at",{ascending:true}),
+   state.supabase.from("objectives").select("*").eq("project_id",id).order("deadline",{ascending:true}),
+  ]);
+  if(partsResult.error)throw partsResult.error;
+  if(logsResult.error)throw logsResult.error;
+  if(objectivesResult.error)throw objectivesResult.error;
+  return{...projectResult.data,parts:partsResult.data||[],logs:logsResult.data||[],objectives:objectivesResult.data||[]};
+ },"Could not load this project timeline.");
+}
+
+function openObjectiveDialog(){
+ if(!logged()||!state.timelineProjectId)return;
+ const dialog=$("#objectiveDialog");
+ $("#objectiveProjectId").value=state.timelineProjectId;
+ $("#objectiveName").value="";
+ $("#objectiveDeadline").value="";
+ $("#objectiveNotes").value="";
+ dialog?.showModal();
+}
+
+async function saveObjective(event){
+ event.preventDefault();
+ if(!logged()||!state.supabase)return;
+ const form=$("#objectiveForm");
+ if(Number(form?.dataset.currentStep||1)<3){$("#objectiveNextButton")?.click();return;}
+ const projectId=$("#objectiveProjectId")?.value||state.timelineProjectId;
+ const objectiveName=$("#objectiveName")?.value.trim();
+ const deadline=$("#objectiveDeadline")?.value||null;
+ const notes=$("#objectiveNotes")?.value.trim()||null;
+ if(!projectId||!objectiveName||!deadline)return;
+ const result=await safe(async()=>{
+  const query=await state.supabase.from("objectives").insert({project_id:projectId,objective_name:objectiveName,deadline,additional_notes:notes}).select().single();
+  if(query.error)throw query.error;
+  return query.data;
+ },"Could not save this objective.");
+ if(!result)return;
+ $("#objectiveDialog")?.close();
+ await touch(projectId);
+ notify("Objective added to your future timeline.");
+ renderTimeline();
+}
+
+async function completeObjective(objectiveId){
+ if(!logged()||!state.supabase||!objectiveId||!state.timelineProjectId)return;
+ const result=await safe(async()=>{
+  const query=await state.supabase.rpc("complete_objective",{p_objective_id:objectiveId});
+  if(query.error)throw query.error;
+  return query.data;
+ },"Could not mark this objective as completed.");
+ if(result===null)return;
+ await touch(state.timelineProjectId);
+ notify("Objective completed and added to your build log.");
+ renderTimeline();
+}
+
+async function renderTimeline(){
+ const routeAtStart=location.hash.replace(/^#\/?/,"");
+ if(!logged()){
+  state.timelineProjectId=null;
+  state.timelineMode="view";
+  main.innerHTML=`<section class="page timeline-page timeline-disabled"><div class="page-header timeline-page-header"><div><p class="eyebrow">TIMELINE</p><h1>Timeline Disabled</h1><p class="muted">Timeline is available with a RELAY account. Please log in to continue</p><button class="button primary timeline-signin" data-action="timeline-signin">Sign in</button></div>${timelineModeToggle({disabled:true})}</div>${timelineBaseLine()}${timelineObjectivesSection(null)}</section>`;
+  return;
+ }
+
+ let selectedSummary=state.projects.find(project=>project.id===state.timelineProjectId)||null;
+ if(state.timelineProjectId&&!selectedSummary)state.timelineProjectId=null;
+ selectedSummary=state.projects.find(project=>project.id===state.timelineProjectId)||null;
+ const planning=state.timelineMode==="planning";
+ const pageTop=`<div class="page-header timeline-page-header"><div><p class="eyebrow">TIMELINE</p><h1>${planning?"Your Future Timeline":"Your Project Timeline"}</h1><p class="muted">${planning?"Let’s plan out your build! Select a car to begin.":"Select a project to view its timeline"}</p></div>${timelineModeToggle()}</div>${timelineProjectPicker(selectedSummary)}`;
+
+ if(!selectedSummary){
+  main.innerHTML=`<section class="page timeline-page ${planning?"timeline-planning-mode":""}">${pageTop}${timelineBaseLine(null,[],{planningMode:planning})}${timelinePlanButton(false)}${timelineObjectivesSection(null)}</section>`;
+  return;
+ }
+
+ main.innerHTML=`<section class="page timeline-page ${planning?"timeline-planning-mode":""}">${pageTop}<div class="timeline-loading">Loading timeline…</div></section>`;
+ const project=await loadTimelineProject(selectedSummary.id);
+ if(location.hash.replace(/^#\/?/,"")!==routeAtStart||state.timelineProjectId!==selectedSummary.id)return;
+ if(!project){
+  main.innerHTML=`<section class="page timeline-page ${planning?"timeline-planning-mode":""}">${pageTop}<div class="warning">This project timeline could not be loaded.</div>${timelineBaseLine(selectedSummary.start_date,[],{planningMode:planning})}${timelinePlanButton(true)}${timelineObjectivesSection(null)}</section>`;
+  return;
+ }
+ const groups=timelineEventGroups(project);
+ main.innerHTML=`<section class="page timeline-page ${planning?"timeline-planning-mode":""}">${pageTop}${timelineBaseLine(project.start_date,groups,{planningMode:planning,objectives:project.objectives})}${timelinePlanButton(true)}${timelineObjectivesSection(project)}</section>`;
+}
+
+function closeTimelineMenu(){
+ const menu=$("#timelineProjectMenu");
+ const button=document.querySelector("[data-action='timeline-toggle']");
+ if(menu)menu.hidden=true;
+ if(button)button.setAttribute("aria-expanded","false");
+}
 
 async function fetchPublicBuilds(){
  if(!state.supabase)throw new Error("Supabase is not configured.");
@@ -451,8 +786,12 @@ function importData(file){const r=new FileReader();r.onerror=()=>notify("Could n
   // ---------------------------------------------------------------------------
 
   document.addEventListener("click",e=>{
+ const insideTimelinePicker=e.target.closest?.(".timeline-picker");
+ if(!insideTimelinePicker)closeTimelineMenu();
  const route=e.target.closest("[data-route]");
  if(route){location.hash="#/"+route.dataset.route;return}
+ const timelineProject=e.target.closest("[data-timeline-project]");
+ if(timelineProject){state.timelineProjectId=timelineProject.dataset.timelineProject;closeTimelineMenu();renderTimeline();return}
  const connect=e.target.closest("[data-open-connect]");
  if(connect){location.hash="#/connect/"+encodeURIComponent(connect.dataset.openConnect);return}
  const op=e.target.closest("[data-open-project]");
@@ -468,17 +807,23 @@ function importData(file){const r=new FileReader();r.onerror=()=>notify("Could n
  switch(a.dataset.action){
   case"new-project":openProjectDialog();break;
   case"edit-project":openProjectDialog(state.currentProject);break;
+  case"timeline-toggle":{const menu=$("#timelineProjectMenu");if(menu){const next=menu.hidden;menu.hidden=!next;a.setAttribute("aria-expanded",next?"true":"false")}break}
+  case"timeline-mode":if(logged()){state.timelineMode=a.checked?"planning":"view";closeTimelineMenu();renderTimeline()}break;
+  case"plan-objective":openObjectiveDialog();break;
+  case"complete-objective":completeObjective(a.dataset.objectiveId);break;
+  case"timeline-signin":state.authMode="login";$("#authTitle").textContent="Sign in";$("#authSubmit").textContent="Sign in";$("#toggleAuth").textContent="Create account";$("#usernameWrap").hidden=true;$("#authEmail").value="";$("#authPassword").value="";$("#authUsername").value="";$("#authError").textContent="";$("#authError").hidden=true;$("#authDialog").showModal();break;
   case"export":exportData();break;
   case"import-prompt":$("#importInput").click();break;
   case"auth":if(state.user)document.querySelector(".account-menu")?.remove()||showAccountMenu();else $("#authDialog").showModal();break;
+  case"settings":document.querySelector(".account-menu")?.remove();location.hash="#/settings";break;
   case"mode":state.editMode=a.dataset.mode==="edit";renderBuilder();break;
   case"add-part":openPart();break;
   case"logs":state.currentProject.showAllLogs=!state.currentProject.showAllLogs;renderBuilder();break;
   case"signout":signOut();break;
  }
 });
-function showAccountMenu(){const m=document.createElement("div");m.className="account-menu";m.innerHTML=`<div class="muted" style="padding:7px 10px">${esc(state.profile?.username||state.user.email)}</div><button data-action="signout">Sign out</button>`;document.body.appendChild(m)}
-$("#projectForm").addEventListener("submit",saveProject);$("#deleteProjectButton").addEventListener("click",deleteProject);$("#partForm").addEventListener("submit",savePart);$("#deletePartButton").addEventListener("click",deletePart);$("#authForm").addEventListener("submit",authSubmit);
+function showAccountMenu(){const m=document.createElement("div");m.className="account-menu";m.innerHTML=`<div class="muted" style="padding:7px 10px">${esc(state.profile?.username||state.user.email)}</div><button data-action="settings">Settings</button><button data-action="signout">Sign out</button>`;document.body.appendChild(m)}
+$("#projectForm").addEventListener("submit",saveProject);$("#deleteProjectButton").addEventListener("click",deleteProject);$("#partForm").addEventListener("submit",savePart);$("#deletePartButton").addEventListener("click",deletePart);$("#objectiveForm")?.addEventListener("submit",saveObjective);$("#authForm").addEventListener("submit",authSubmit);
 $("#toggleAuth").addEventListener("click",()=>{state.authMode=state.authMode==="login"?"signup":"login";const s=state.authMode==="signup";$("#authTitle").textContent=s?"Create account":"Sign in";$("#authSubmit").textContent=s?"Create account":"Sign in";$("#toggleAuth").textContent=s?"Back to sign in":"Create account";$("#usernameWrap").hidden=!s});
 
 $("#projectPublic")?.addEventListener("change",e=>{
