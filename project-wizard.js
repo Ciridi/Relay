@@ -513,3 +513,152 @@
   setEngineSwapUi();
   setStep(1, { searchImages: false });
 })();
+
+(() => {
+  "use strict";
+
+  const dialog = document.getElementById("partDialog");
+  const form = document.getElementById("partForm");
+  if (!dialog || !form) return;
+
+  const steps = [...form.querySelectorAll("[data-part-step]")];
+  const progress = [...form.querySelectorAll("[data-part-progress-step]")];
+  const stepNumber = document.getElementById("partStepNumber");
+  const previousButton = document.getElementById("partPreviousButton");
+  const nextButton = document.getElementById("partNextButton");
+  const saveButton = document.getElementById("partSaveButton");
+  const nameInput = document.getElementById("partName");
+  const costInput = document.getElementById("partCost");
+  const linkInput = document.getElementById("partLink");
+
+  let currentStep = 1;
+
+  function isReadOnly() {
+    return Boolean(nameInput?.disabled);
+  }
+
+  function validateStep(step) {
+    if (isReadOnly()) return true;
+
+    if (step === 1) {
+      if (!nameInput?.checkValidity()) {
+        nameInput?.reportValidity();
+        return false;
+      }
+
+      if (costInput && !costInput.checkValidity()) {
+        costInput.reportValidity();
+        return false;
+      }
+    }
+
+    if (step === 3 && linkInput?.value.trim() && !linkInput.checkValidity()) {
+      linkInput.reportValidity();
+      return false;
+    }
+
+    return true;
+  }
+
+  function setStep(step, { focus = true } = {}) {
+    const target = Math.min(3, Math.max(1, Number(step) || 1));
+    currentStep = target;
+
+    steps.forEach((panel) => {
+      panel.hidden = Number(panel.dataset.partStep) !== target;
+    });
+
+    progress.forEach((bar) => {
+      bar.classList.toggle("active", Number(bar.dataset.partProgressStep) <= target);
+    });
+
+    if (stepNumber) stepNumber.textContent = String(target);
+    if (previousButton) previousButton.disabled = target === 1;
+    if (nextButton) nextButton.hidden = target === 3;
+    if (saveButton) saveButton.hidden = target !== 3 || isReadOnly();
+
+    if (focus) {
+      const active = steps.find((panel) => Number(panel.dataset.partStep) === target);
+      active
+        ?.querySelector("input:not([type=hidden]):not(:disabled), textarea:not(:disabled)")
+        ?.focus({ preventScroll: true });
+    }
+  }
+
+  previousButton?.addEventListener("click", () => setStep(currentStep - 1));
+
+  nextButton?.addEventListener("click", () => {
+    if (!validateStep(currentStep)) return;
+    setStep(currentStep + 1);
+  });
+
+  // Treat Enter like the wizard's primary action instead of allowing the
+  // browser to implicitly submit <form method="dialog"> from a text input.
+  // This must happen on keydown so app.js never receives an early submit.
+  dialog.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.defaultPrevented) return;
+    if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+
+    const target = event.target;
+    const tagName = target?.tagName?.toLowerCase();
+
+    // Notes is intentionally multiline. Enter should keep inserting a newline.
+    if (tagName === "textarea" || target?.isContentEditable) return;
+
+    // Preserve the normal behavior of explicitly focused buttons/links.
+    if (tagName === "button" || tagName === "a") return;
+
+    if (currentStep < 3) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (!validateStep(currentStep)) return;
+      setStep(currentStep + 1);
+      return;
+    }
+
+    // On the final step, Enter is equivalent to Save part. requestSubmit()
+    // preserves normal form validation and the existing app.js save handler.
+    if (!isReadOnly()) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      form.requestSubmit(saveButton || undefined);
+    }
+  }, true);
+
+  // Safety net: if the browser, autofill, accessibility software, or another
+  // script triggers a submit before Step 3, do not let that submit reach the
+  // existing app.js savePart() listener. Merely preventDefault() is not enough
+  // because event listeners still run after default cancellation.
+  form.addEventListener("submit", (event) => {
+    if (currentStep < 3) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (!validateStep(currentStep)) return;
+      setStep(currentStep + 1);
+      return;
+    }
+
+    for (const step of [1, 2, 3]) {
+      if (!validateStep(step)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setStep(step);
+        return;
+      }
+    }
+  }, true);
+
+  const openObserver = new MutationObserver(() => {
+    if (!dialog.open) return;
+    setStep(1, { focus: false });
+    requestAnimationFrame(() => setStep(1));
+  });
+
+  openObserver.observe(dialog, { attributes: true, attributeFilter: ["open"] });
+
+  dialog.addEventListener("close", () => {
+    setStep(1, { focus: false });
+  });
+
+  setStep(1, { focus: false });
+})();

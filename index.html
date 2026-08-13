@@ -239,8 +239,8 @@
     </form>
   </dialog>
 
-  <dialog id="partDialog" class="modal">
-    <form method="dialog" id="partForm" class="modal-card">
+  <dialog id="partDialog" class="modal part-modal">
+    <form method="dialog" id="partForm" class="modal-card part-wizard">
       <button
         type="button"
         class="icon-button close-button"
@@ -248,43 +248,83 @@
         aria-label="Close"
       >×</button>
 
-      <p class="eyebrow" id="partDialogEyebrow">PART</p>
+      <p class="eyebrow">
+        <span id="partDialogCategory">PART</span> · STEP <span id="partStepNumber">1</span> OF 3
+      </p>
       <h2 id="partDialogTitle">Add part</h2>
       <input type="hidden" id="partId">
       <input type="hidden" id="partCategory">
 
-      <div class="form-grid">
-        <label>
-          Part name
-          <input id="partName" required maxlength="160">
-        </label>
-        <label>
-          Part cost
-          <input id="partCost" type="number" min="0" step="0.01" placeholder="0.00">
-        </label>
-        <label>
-          Install date
-          <input id="partDate" type="date">
-        </label>
-        <label>
-          Part source
-          <input id="partSource" maxlength="160">
-        </label>
-        <label class="full">
-          Link
-          <input id="partLink" type="url" placeholder="https://">
-        </label>
-        <label class="full">
-          Additional notes
-          <textarea id="partNotes" rows="4" maxlength="2000"></textarea>
-        </label>
+      <div class="wizard-progress part-wizard-progress" aria-hidden="true">
+        <span class="active" data-part-progress-step="1"></span>
+        <span data-part-progress-step="2"></span>
+        <span data-part-progress-step="3"></span>
       </div>
 
-      <div class="modal-actions">
+      <section class="wizard-step part-wizard-step" data-part-step="1">
+        <div class="wizard-heading">
+          <h3>Part name and cost</h3>
+        </div>
+
+        <div class="form-grid">
+          <label class="full">
+            Part name
+            <input id="partName" required maxlength="160" autocomplete="off">
+          </label>
+          <label class="full">
+            Cost
+            <input id="partCost" type="number" min="0" step="0.01" placeholder="0.00">
+          </label>
+        </div>
+      </section>
+
+      <section class="wizard-step part-wizard-step" data-part-step="2" hidden>
+        <div class="wizard-heading">
+          <h3>Install date and notes</h3>
+        </div>
+
+        <div class="form-grid">
+          <label class="full">
+            Install date
+            <input id="partDate" type="date">
+          </label>
+          <label class="full">
+            Notes
+            <textarea
+              id="partNotes"
+              rows="6"
+              maxlength="2000"
+              placeholder="How did it go? Write some notes here!"
+            ></textarea>
+          </label>
+        </div>
+      </section>
+
+      <section class="wizard-step part-wizard-step" data-part-step="3" hidden>
+        <div class="wizard-heading">
+          <h3>Part Source <span class="muted optional-label">(optional)</span></h3>
+          <p class="muted">Let others know where you got it</p>
+        </div>
+
+        <div class="form-grid">
+          <label class="full">
+            Source name
+            <input id="partSource" maxlength="160" autocomplete="off">
+          </label>
+          <label class="full">
+            Link
+            <input id="partLink" type="url" placeholder="https://">
+          </label>
+        </div>
+      </section>
+
+      <div class="wizard-actions part-wizard-actions">
         <button type="button" class="button danger" id="deletePartButton">Delete</button>
-        <span></span>
+        <span class="wizard-spacer"></span>
         <button type="button" class="button ghost" data-dialog-close>Cancel</button>
-        <button type="submit" class="button primary">Save part</button>
+        <button type="button" class="button ghost" id="partPreviousButton" disabled>Previous</button>
+        <button type="button" class="button primary" id="partNextButton">Next</button>
+        <button type="submit" class="button primary" id="partSaveButton" hidden>Save part</button>
       </div>
     </form>
   </dialog>

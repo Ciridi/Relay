@@ -205,29 +205,20 @@ async function loadAccount() {
         .order("updated_at", { ascending: false }),
       state.supabase
         .from("projects")
-        .select("id,is_public,vehicle_year,vehicle_make,vehicle_model"),
+        .select("id,is_public"),
     ]);
 
     if (summaryResult.error) throw summaryResult.error;
     if (visibilityResult.error) throw visibilityResult.error;
 
-    // Keep project_summaries focused on its existing aggregate shape. Vehicle
-    // metadata lives on projects and is merged here so schema migrations never
-    // need to replace/drop columns from the live summary view.
-    const projectMetadataById = new Map(
-      (visibilityResult.data || []).map((project) => [project.id, project]),
+    const visibilityById = new Map(
+      (visibilityResult.data || []).map((project) => [project.id, Boolean(project.is_public)]),
     );
 
-    state.projects = (summaryResult.data || []).map((project) => {
-      const metadata = projectMetadataById.get(project.id) || {};
-      return {
-        ...project,
-        is_public: Boolean(metadata.is_public),
-        vehicle_year: metadata.vehicle_year ?? project.vehicle_year ?? null,
-        vehicle_make: metadata.vehicle_make ?? project.vehicle_make ?? null,
-        vehicle_model: metadata.vehicle_model ?? project.vehicle_model ?? null,
-      };
-    });
+    state.projects = (summaryResult.data || []).map((project) => ({
+      ...project,
+      is_public: visibilityById.get(project.id) ?? false,
+    }));
   }
 async function loadProject(id){
  if(!logged()){state.currentProject=state.projects.find(p=>p.id===id)||null;return state.currentProject}
@@ -365,12 +356,11 @@ function openProjectDialog(p=null){
  }
  if(visibilityMode)visibilityMode.textContent=publicToggle.checked?"Public":"Private";
  if(visibilityStatus){
-  visibilityStatus.hidden=signedIn&&!publicToggle.checked;
   visibilityStatus.textContent=!signedIn
    ?"Sign in to make a build public."
    :publicToggle.checked
-    ?"Other people can see your build"
-    :"";
+    ?"Anyone using Connect can view this build."
+    :"Only you can access this build.";
  }
 
  $("#projectDialog").showModal();
@@ -379,8 +369,8 @@ async function saveProject(e){e.preventDefault();const id=$("#projectId").value,
  if(!logged()){if(id){const p=state.projects.find(x=>x.id===id);Object.assign(p,payload,{updated_at:new Date().toISOString()})}else state.projects.unshift({id:uid(),...payload,created_at:new Date().toISOString(),updated_at:new Date().toISOString(),parts:[],logs:[]});$("#projectDialog").close();notify("Guest project updated.");renderProjects();return}
  const r=await safe(async()=>{if(id){const q=await state.supabase.from("projects").update(payload).eq("id",id).select().single();if(q.error)throw q.error;return q.data}const q=await state.supabase.from("projects").insert({...payload,user_id:state.user.id}).select().single();if(q.error)throw q.error;return q.data},"Could not save project.");if(!r)return;$("#projectDialog").close();await loadProjects();notify(id?"Project updated.":"Project created.");location.hash=`#/project/${id||r.id}`}
 async function deleteProject(){const id=$("#projectId").value;if(!id||!confirm("Delete this project and all of its parts/logs?"))return;if(!logged()){state.projects=state.projects.filter(x=>x.id!==id);$("#projectDialog").close();location.hash="#/projects";notify("Project deleted.");return}const r=await safe(()=>state.supabase.from("projects").delete().eq("id",id),"Could not delete project.");if(r===null)return;$("#projectDialog").close();await loadProjects();location.hash="#/projects";notify("Project deleted.")}
-function openPart(x=null){$("#partDialogEyebrow").textContent=state.category;$("#partDialogTitle").textContent=x?"Part details":"Add part";$("#partId").value=x?.id||"";$("#partCategory").value=x?.category||state.category;$("#partName").value=x?.name||"";$("#partCost").value=x?.cost??"";$("#partDate").value=x?.install_date||"";$("#partSource").value=x?.source||"";$("#partLink").value=x?.link||"";$("#partNotes").value=x?.notes||"";$("#deletePartButton").hidden=!x;const disabled=!state.editMode&&!!x;$("#partForm").querySelectorAll("input:not([type=hidden]),textarea").forEach(e=>e.disabled=disabled);$("#partForm button[type=submit]").hidden=disabled;$("#partDialog").showModal()}
-async function savePart(e){e.preventDefault();const p=state.currentProject,id=$("#partId").value,name=$("#partName").value.trim();if(!name)return;const payload={project_id:p.id,category:$("#partCategory").value,name,cost:Math.max(0,Number($("#partCost").value)||0),install_date:$("#partDate").value||null,source:$("#partSource").value.trim()||null,link:$("#partLink").value.trim()||null,notes:$("#partNotes").value.trim()||null};if(payload.link)try{new URL(payload.link)}catch{notify("Please enter a valid URL.");return}
+function openPart(x=null){$("#partDialogCategory").textContent=state.category||"PART";$("#partDialogTitle").textContent=x?"Part details":"Add part";$("#partId").value=x?.id||"";$("#partCategory").value=x?.category||state.category;$("#partName").value=x?.name||"";$("#partCost").value=x?.cost??"";$("#partDate").value=x?.install_date||"";$("#partSource").value=x?.source||"";$("#partLink").value=x?.link||"";$("#partNotes").value=x?.notes||"";$("#deletePartButton").hidden=!x;const disabled=!state.editMode&&!!x;$("#partForm").querySelectorAll("input:not([type=hidden]),textarea").forEach(e=>e.disabled=disabled);$("#partForm button[type=submit]").hidden=disabled;$("#partDialog").showModal()}
+async function savePart(e){e.preventDefault();const partSaveButton=$("#partSaveButton");if(partSaveButton?.hidden){$("#partNextButton")?.click();return}const p=state.currentProject,id=$("#partId").value,name=$("#partName").value.trim();if(!name)return;const payload={project_id:p.id,category:$("#partCategory").value,name,cost:Math.max(0,Number($("#partCost").value)||0),install_date:$("#partDate").value||null,source:$("#partSource").value.trim()||null,link:$("#partLink").value.trim()||null,notes:$("#partNotes").value.trim()||null};if(payload.link)try{new URL(payload.link)}catch{notify("Please enter a valid URL.");return}
  if(!logged()){if(id){const i=p.parts.findIndex(x=>x.id===id);if(i>=0)p.parts[i]={...p.parts[i],...payload}}else p.parts.push({id:uid(),...payload});p.updated_at=new Date().toISOString();$("#partDialog").close();notify(id?"Part updated.":"Part added.");renderBuilder();return}
  const r=await safe(async()=>{if(id){const q=await state.supabase.from("parts").update(payload).eq("id",id).select().single();if(q.error)throw q.error;return q.data}const q=await state.supabase.from("parts").insert(payload).select().single();if(q.error)throw q.error;return q.data},"Could not save part.");if(!r)return;await touch(p.id);$("#partDialog").close();notify(id?"Part updated.":"Part added.");renderBuilder()}
 async function deletePart(){const id=$("#partId").value,p=state.currentProject;if(!id||!confirm("Delete this part?"))return;if(!logged()){p.parts=p.parts.filter(x=>x.id!==id);$("#partDialog").close();notify("Part deleted.");renderBuilder();return}const r=await safe(()=>state.supabase.from("parts").delete().eq("id",id),"Could not delete part.");if(r===null)return;await touch(p.id);$("#partDialog").close();notify("Part deleted.");renderBuilder()}
@@ -495,10 +485,9 @@ $("#projectPublic")?.addEventListener("change",e=>{
  const mode=$("#projectVisibilityMode");
  const status=$("#projectVisibilityStatus");
  if(mode)mode.textContent=e.target.checked?"Public":"Private";
- if(status){
-  status.hidden=!e.target.checked;
-  status.textContent=e.target.checked?"Other people can see your build":"";
- }
+ if(status)status.textContent=e.target.checked
+  ?"Anyone using Connect can view this build."
+  :"Only you can access this build.";
 });
 
 document.addEventListener("keydown",e=>{
