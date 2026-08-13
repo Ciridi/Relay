@@ -125,6 +125,7 @@
   function setStep(step, options = {}) {
     const target = Math.max(1, Math.min(5, Number(step) || 1));
     currentStep = target;
+    form.dataset.currentStep = String(target);
 
     steps.forEach((panel) => {
       panel.hidden = Number(panel.dataset.projectStep) !== target;
@@ -442,15 +443,54 @@
 
   refreshImagesButton?.addEventListener("click", () => searchProjectImages(true));
 
-  /*
-    Capture-phase sync runs before the existing app.js submit listener, regardless of
-    which script registered its listener first. We do not prevent submission; the
-    current, already-working persistence code remains responsible for the database write.
-  */
+  // Treat Enter like the wizard's primary action instead of allowing the browser
+  // to implicitly submit <form method="dialog"> from a text input. Textareas stay
+  // multiline. On Steps 1-4, Enter advances exactly like Next; Step 5 may save.
+  form.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.defaultPrevented || event.isComposing) return;
+    if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+
+    const target = event.target;
+    const tagName = target?.tagName?.toLowerCase();
+
+    if (tagName === "textarea" || target?.isContentEditable) return;
+    if (tagName === "button" || tagName === "a") return;
+
+    if (currentStep < 5) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (!validateStep(currentStep)) return;
+      syncCompatibilityFields();
+      setStep(currentStep + 1);
+      return;
+    }
+
+    // Future-proof Step 5 in case a text input is added there later. The current
+    // visibility checkbox keeps its normal keyboard behavior.
+    if (currentStep === 5 && tagName === "input" && target?.type !== "checkbox") {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      form.requestSubmit(saveButton || undefined);
+    }
+  }, true);
+
+  // Safety net: an implicit/programmatic submit on Steps 1-4 must never reach
+  // app.js's saveProject() listener. preventDefault() alone is insufficient because
+  // other submit listeners still execute, so stopImmediatePropagation() is required.
   form.addEventListener("submit", (event) => {
+    if (currentStep < 5) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (!validateStep(currentStep)) return;
+      syncCompatibilityFields();
+      setStep(currentStep + 1);
+      return;
+    }
+
     for (const step of [1, 2, 3]) {
       if (!validateStep(step)) {
         event.preventDefault();
+        event.stopImmediatePropagation();
         setStep(step, { searchImages: false });
         return;
       }
@@ -460,6 +500,7 @@
 
     if (!text(projectImage?.value)) {
       event.preventDefault();
+      event.stopImmediatePropagation();
       setStep(4, { searchImages: false });
       imageStatus.className = "image-search-status error";
       imageStatus.textContent = "Choose an image suggestion or enter an image URL before saving.";
