@@ -42,6 +42,7 @@
     connectCategory: "ENGINE",
     currentConnectBuildId: null,
     currentConnectBuild: null,
+    timelineProjectId: null,
   };
 
   const $ = (selector) => document.querySelector(selector);
@@ -88,6 +89,43 @@
           new Date(value),
         )
       : "—";
+
+  function localDateKey(value) {
+    if (!value) return "";
+
+    const raw = String(value).trim();
+    const dateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (dateOnly) return raw;
+
+    const date = new Date(raw);
+    if (Number.isNaN(date.getTime())) return "";
+
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  function dateFromKey(key) {
+    const match = String(key || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return null;
+    return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  }
+
+  function numericDateText(value) {
+    const key = localDateKey(value);
+    if (!key) return "--/--/----";
+    const [year, month, day] = key.split("-");
+    return `${month}/${day}/${year}`;
+  }
+
+  function todayKey() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
 
   const total = (project) =>
     (project?.parts || []).reduce(
@@ -230,6 +268,8 @@ function render(){
   renderConnectBuild();
  }else if(h==="connect"){
   renderConnect();
+ }else if(h==="timeline"){
+  renderTimeline();
  }else if(h.startsWith("project/")){
   state.currentProjectId=decodeURIComponent(h.split("/")[1]||"");
   renderBuilder();
@@ -247,6 +287,108 @@ function renderProjects(){
  $("#sortSelect").value=state.sort;$("#sortSelect").onchange=e=>{state.sort=e.target.value;renderProjects()}
 }
 function projectCard(p){const vehicle=vehicleLabel(p);return`<article class="project-card" data-open-project="${esc(p.id)}" tabindex="0" role="button"><img class="thumb" src="${esc(p.image_url||p.image||FALLBACK_IMAGE)}" alt=""><div><h3>${esc(p.name)}</h3><div class="project-card-vehicle ${vehicle?"":"missing"}">${esc(vehicle||"Vehicle details not set")}</div><div class="meta">Last modified ${esc(dateText(p.updated_at||p.updatedAt))}${p.is_public?' · Public':''}</div><div class="project-hover">${esc(p.description||"No description yet.")}<br>${esc(dateText(p.start_date||p.startDate))} · ${p.part_count??p.parts?.length??0} modifications</div></div><div class="project-total">${money(p.total_cost??total(p))}</div></article>`}
+
+
+function timelineProjectPicker(selectedProject) {
+ const selectedImage=selectedProject?projectImageUrl(selectedProject.image_url||selectedProject.image):"";
+ return`<div class="timeline-picker"><button type="button" class="timeline-picker-button" data-action="timeline-toggle" aria-haspopup="listbox" aria-expanded="false">${selectedProject?`<span class="timeline-picker-project"><img src="${esc(selectedImage)}" alt=""><span>${esc(selectedProject.name||"Untitled project")}</span></span>`:`<span class="timeline-picker-placeholder">Select a project</span>`}<span class="timeline-picker-chevron" aria-hidden="true">⌄</span></button><div class="timeline-project-menu" id="timelineProjectMenu" role="listbox" aria-label="Select a project" hidden>${state.projects.length?state.projects.map(project=>`<button type="button" class="timeline-project-option ${selectedProject?.id===project.id?"selected":""}" data-timeline-project="${esc(project.id)}" role="option" aria-selected="${selectedProject?.id===project.id?"true":"false"}"><img src="${esc(projectImageUrl(project.image_url||project.image))}" alt=""><span>${esc(project.name||"Untitled project")}</span></button>`).join(""):`<div class="timeline-project-empty muted">No projects available.</div>`}</div></div>`;
+}
+
+function timelineBaseLine(startDate=null, events=[]) {
+ const startKey=localDateKey(startDate);
+ const endKey=todayKey();
+ const start=dateFromKey(startKey);
+ const end=dateFromKey(endKey);
+ const startTime=start?.getTime();
+ const endTime=end?.getTime();
+ const span=start&&end?Math.max(1,endTime-startTime):1;
+ const dots=events.map(group=>{
+  const eventDate=dateFromKey(group.date);
+  let position=50;
+  if(start&&end&&eventDate){
+   position=((eventDate.getTime()-startTime)/span)*100;
+   position=Math.min(100,Math.max(0,position));
+  }
+  const edgeClass=position<16?"near-start":position>84?"near-end":"";
+  return`<div class="timeline-event-dot ${edgeClass}" style="--timeline-position:${position}%" role="button" tabindex="0" aria-label="${esc(group.items.length)} timeline ${group.items.length===1?"event":"events"} on ${esc(numericDateText(group.date))}"><div class="timeline-event-popover">${group.items.map(item=>timelineEventTile(item)).join("")}</div></div>`;
+ }).join("");
+ return`<div class="timeline-stage-scroll"><div class="timeline-stage"><div class="timeline-track"><span class="timeline-line" aria-hidden="true"></span><span class="timeline-endpoint timeline-endpoint-start" aria-hidden="true"></span><span class="timeline-endpoint timeline-endpoint-today" aria-hidden="true"></span>${dots}<div class="timeline-end-label timeline-end-label-start"><strong>Project Start Date</strong><span>${esc(numericDateText(startDate))}</span></div><div class="timeline-end-label timeline-end-label-today"><strong>Today</strong><span>${esc(numericDateText(endKey))}</span></div></div></div></div>`;
+}
+
+function timelineEventTile(item) {
+ if(item.type==="part"){
+  return`<article class="timeline-event-tile"><div class="timeline-event-date">${esc(numericDateText(item.date))}</div><strong>${esc(item.name||"Unnamed part")}</strong><p>${esc(item.description||"No description added.")}</p></article>`;
+ }
+ return`<article class="timeline-event-tile"><div class="timeline-event-date">${esc(numericDateText(item.date))}</div><p>${esc(item.text||"No post text.")}</p></article>`;
+}
+
+function timelineEventGroups(project) {
+ const byDate=new Map();
+ const add=(date,item)=>{
+  const key=localDateKey(date);
+  if(!key)return;
+  if(!byDate.has(key))byDate.set(key,[]);
+  byDate.get(key).push({...item,date:key});
+ };
+ (project.parts||[]).forEach(part=>{
+  if(part.install_date)add(part.install_date,{type:"part",name:part.name,description:part.description||part.notes||""});
+ });
+ (project.logs||[]).forEach(log=>{
+  if(log.created_at)add(log.created_at,{type:"post",text:log.text||""});
+ });
+ return[...byDate.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([date,items])=>({date,items}));
+}
+
+async function loadTimelineProject(id){
+ if(!logged()||!id)return null;
+ return safe(async()=>{
+  const projectResult=await state.supabase.from("projects").select("*").eq("id",id).single();
+  if(projectResult.error)throw projectResult.error;
+  const [partsResult,logsResult]=await Promise.all([
+   state.supabase.from("parts").select("*").eq("project_id",id).order("install_date",{ascending:true}),
+   state.supabase.from("build_logs").select("*").eq("project_id",id).order("created_at",{ascending:true}),
+  ]);
+  if(partsResult.error)throw partsResult.error;
+  if(logsResult.error)throw logsResult.error;
+  return{...projectResult.data,parts:partsResult.data||[],logs:logsResult.data||[]};
+ },"Could not load this project timeline.");
+}
+
+async function renderTimeline(){
+ const routeAtStart=location.hash.replace(/^#\/?/,"");
+ if(!logged()){
+  state.timelineProjectId=null;
+  main.innerHTML=`<section class="page timeline-page timeline-disabled"><div class="page-header timeline-page-header"><div><p class="eyebrow">TIMELINE</p><h1>Timeline Disabled</h1><p class="muted">Timeline is available with a RELAY account. Please log in to continue</p><button class="button primary timeline-signin" data-action="timeline-signin">Sign in</button></div></div>${timelineBaseLine()}</section>`;
+  return;
+ }
+
+ let selectedSummary=state.projects.find(project=>project.id===state.timelineProjectId)||null;
+ if(state.timelineProjectId&&!selectedSummary)state.timelineProjectId=null;
+ selectedSummary=state.projects.find(project=>project.id===state.timelineProjectId)||null;
+ const pageTop=`<div class="page-header timeline-page-header"><div><p class="eyebrow">TIMELINE</p><h1>Your Project Timeline</h1><p class="muted">Select a project to view its timeline</p></div></div>${timelineProjectPicker(selectedSummary)}`;
+
+ if(!selectedSummary){
+  main.innerHTML=`<section class="page timeline-page">${pageTop}${timelineBaseLine()}</section>`;
+  return;
+ }
+
+ main.innerHTML=`<section class="page timeline-page">${pageTop}<div class="timeline-loading">Loading timeline…</div></section>`;
+ const project=await loadTimelineProject(selectedSummary.id);
+ if(location.hash.replace(/^#\/?/,"")!==routeAtStart||state.timelineProjectId!==selectedSummary.id)return;
+ if(!project){
+  main.innerHTML=`<section class="page timeline-page">${pageTop}<div class="warning">This project timeline could not be loaded.</div>${timelineBaseLine(selectedSummary.start_date)}</section>`;
+  return;
+ }
+ const groups=timelineEventGroups(project);
+ main.innerHTML=`<section class="page timeline-page">${pageTop}${timelineBaseLine(project.start_date,groups)}</section>`;
+}
+
+function closeTimelineMenu(){
+ const menu=$("#timelineProjectMenu");
+ const button=document.querySelector("[data-action='timeline-toggle']");
+ if(menu)menu.hidden=true;
+ if(button)button.setAttribute("aria-expanded","false");
+}
 
 async function fetchPublicBuilds(){
  if(!state.supabase)throw new Error("Supabase is not configured.");
@@ -451,8 +593,12 @@ function importData(file){const r=new FileReader();r.onerror=()=>notify("Could n
   // ---------------------------------------------------------------------------
 
   document.addEventListener("click",e=>{
+ const insideTimelinePicker=e.target.closest?.(".timeline-picker");
+ if(!insideTimelinePicker)closeTimelineMenu();
  const route=e.target.closest("[data-route]");
  if(route){location.hash="#/"+route.dataset.route;return}
+ const timelineProject=e.target.closest("[data-timeline-project]");
+ if(timelineProject){state.timelineProjectId=timelineProject.dataset.timelineProject;closeTimelineMenu();renderTimeline();return}
  const connect=e.target.closest("[data-open-connect]");
  if(connect){location.hash="#/connect/"+encodeURIComponent(connect.dataset.openConnect);return}
  const op=e.target.closest("[data-open-project]");
@@ -468,6 +614,8 @@ function importData(file){const r=new FileReader();r.onerror=()=>notify("Could n
  switch(a.dataset.action){
   case"new-project":openProjectDialog();break;
   case"edit-project":openProjectDialog(state.currentProject);break;
+  case"timeline-toggle":{const menu=$("#timelineProjectMenu");if(menu){const next=menu.hidden;menu.hidden=!next;a.setAttribute("aria-expanded",next?"true":"false")}break}
+  case"timeline-signin":state.authMode="login";$("#authTitle").textContent="Sign in";$("#authSubmit").textContent="Sign in";$("#toggleAuth").textContent="Create account";$("#usernameWrap").hidden=true;$("#authEmail").value="";$("#authPassword").value="";$("#authUsername").value="";$("#authError").textContent="";$("#authError").hidden=true;$("#authDialog").showModal();break;
   case"export":exportData();break;
   case"import-prompt":$("#importInput").click();break;
   case"auth":if(state.user)document.querySelector(".account-menu")?.remove()||showAccountMenu();else $("#authDialog").showModal();break;
