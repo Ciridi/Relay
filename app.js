@@ -262,7 +262,13 @@ async function loadAccount() {
 async function loadProject(id){
  if(!logged()){state.currentProject=state.projects.find(p=>p.id===id)||null;return state.currentProject}
  return safe(async()=>{const p=await state.supabase.from("projects").select("*").eq("id",id).single();if(p.error)throw p.error;const [parts,logs]=await Promise.all([state.supabase.from("parts").select("*").eq("project_id",id).order("created_at"),state.supabase.from("build_logs").select("*").eq("project_id",id).order("created_at",{ascending:false})]);if(parts.error)throw parts.error;if(logs.error)throw logs.error;state.currentProject={...p.data,parts:parts.data||[],logs:logs.data||[]};return state.currentProject},"Could not load this project.")}
+function syncHomepageNav(){
+ const homeNav=document.querySelector(".home-nav");
+ if(homeNav)homeNav.hidden=!logged();
+}
+
 function render(){
+ syncHomepageNav();
  const h=location.hash.replace(/^#\/?/,"");
  if(h.startsWith("connect/")){
   state.currentConnectBuildId=decodeURIComponent(h.split("/")[1]||"");
@@ -271,6 +277,9 @@ function render(){
   renderConnect();
  }else if(h==="timeline"){
   renderTimeline();
+ }else if(h==="home"){
+  if(logged())renderHomepage();
+  else renderHome();
  }else if(h==="settings"){
   if(!logged()){
    location.hash="#/projects";
@@ -288,6 +297,166 @@ function render(){
  main.focus({preventScroll:true});
 }
 function renderHome(){main.innerHTML=`<section class="hero"><div class="hero-inner"><p class="eyebrow">CAR PROJECT ORGANIZER</p><h1>Build the car.<br>Keep the story.</h1><p>One workspace for parts, costs, installation dates, build notes, and the decisions that turn a project car into your project car.</p><button class="button primary" data-route="projects">Take me to the editor</button><p class="muted" style="font-size:.82rem;margin-top:18px">${logged()?`Signed in as ${esc(state.profile?.username||state.user.email)}`:"Guest editor — changes disappear on refresh"}</p></div></section>`}
+
+function homepageUsername(){
+ const direct=state.profile?.username||state.user?.user_metadata?.username||state.user?.user_metadata?.display_name;
+ if(direct)return String(direct).trim();
+ const email=String(state.user?.email||"");
+ return email.includes("@")?email.split("@")[0]:"Builder";
+}
+
+function homepageGreeting(username){
+ const options=[
+  `Hey ${username}`,
+  `Welcome back ${username}`,
+  `Let’s get building ${username}!`,
+  `Ready to go ${username}?`,
+ ];
+ let last=-1;
+ try{last=Number(sessionStorage.getItem("relayHomepageGreetingIndex"));}catch{}
+ const next=Number.isInteger(last)&&last>=0?(last+1)%options.length:Math.floor(Math.random()*options.length);
+ try{sessionStorage.setItem("relayHomepageGreetingIndex",String(next));}catch{}
+ return options[next];
+}
+
+function renderHomepage(){
+ if(!logged()){renderHome();return;}
+ const username=homepageUsername();
+ const greeting=homepageGreeting(username);
+ main.innerHTML=`<section class="page homepage-page"><div class="page-header homepage-header"><div class="homepage-greeting"><p class="eyebrow">HOMEPAGE</p><h1>${esc(greeting)}</h1><p class="muted">Here’s what’s happening with your builds and the RELAY community.</p><button class="button primary homepage-editor-button" data-route="projects">Take me to the editor</button></div></div><div class="homepage-grid"><div class="homepage-main"><section class="panel homepage-card homepage-weather-card"><div class="homepage-section-head"><div><p class="eyebrow">LOCAL WEATHER</p><h2>Current conditions</h2></div></div><div id="homepageWeather" class="homepage-loading">Finding your local weather…</div></section><section class="panel homepage-card"><div class="homepage-section-head"><div><p class="eyebrow">CONNECT</p><h2>Recent community updates</h2></div><button type="button" class="button ghost" data-route="connect">View Connect</button></div><div id="homepageCommunity" class="homepage-loading">Loading recent builds…</div></section></div><aside class="panel homepage-card homepage-objectives-panel"><div class="homepage-section-head"><div><p class="eyebrow">PLANNING</p><h2>Current Objectives</h2></div></div><div id="homepageObjectives" class="homepage-loading">Loading objectives…</div><div class="homepage-objective-actions"><button type="button" class="button primary" data-route="timeline">Manage Objectives</button></div></aside></div></section>`;
+ loadHomepageObjectives();
+ loadHomepageCommunity();
+ loadHomepageWeather();
+}
+
+function homepageStillActive(){
+ return logged()&&location.hash.replace(/^#\/?/,"")==="home";
+}
+
+async function loadHomepageObjectives(){
+ const root=$("#homepageObjectives");
+ if(!root||!logged()||!state.supabase)return;
+ const projectIds=state.projects.map(project=>project.id).filter(Boolean);
+ if(!projectIds.length){
+  root.innerHTML=`<div class="homepage-empty muted">No active objectives yet. Create one in Planning Mode.</div>`;
+  return;
+ }
+ try{
+  const {data,error}=await state.supabase.from("objectives").select("*").in("project_id",projectIds).eq("objective_completed",false).order("deadline",{ascending:true,nullsFirst:false});
+  if(error)throw error;
+  if(!homepageStillActive())return;
+  const target=$("#homepageObjectives");
+  if(!target)return;
+  const projectNames=new Map(state.projects.map(project=>[project.id,project.name||"Untitled project"]));
+  const objectives=Array.isArray(data)?data:[];
+  target.innerHTML=objectives.length?`<div class="homepage-objective-list">${objectives.map(item=>`<article class="homepage-objective-item"><div class="homepage-objective-project">From ${esc(projectNames.get(item.project_id)||"Untitled project")}</div><h3>${esc(item.objective_name||"Untitled objective")}</h3><div class="homepage-objective-deadline">Deadline ${esc(numericDateText(item.deadline))}</div></article>`).join("")}</div>`:`<div class="homepage-empty muted">No active objectives yet. Create one in Planning Mode.</div>`;
+ }catch(error){
+  console.error(error);
+  if(!homepageStillActive())return;
+  const target=$("#homepageObjectives");
+  if(target)target.innerHTML=`<div class="homepage-empty muted">Current objectives could not be loaded.</div>`;
+ }
+}
+
+function homepageBuildIsOwn(build){
+ const buildId=String(build?.id||"");
+ if(buildId&&state.projects.some(project=>String(project.id)===buildId))return true;
+ const possibleOwnerId=build?.user_id||build?.owner_id||build?.profile_id||"";
+ if(possibleOwnerId&&state.user?.id)return String(possibleOwnerId)===String(state.user.id);
+ const ownerName=String(build?.owner_name||"").trim().toLowerCase();
+ const username=homepageUsername().trim().toLowerCase();
+ return Boolean(ownerName&&username&&ownerName===username);
+}
+
+async function loadHomepageCommunity(){
+ const root=$("#homepageCommunity");
+ if(!root)return;
+ try{
+  const builds=await fetchPublicBuilds();
+  if(!homepageStillActive())return;
+  const target=$("#homepageCommunity");
+  if(!target)return;
+  const recent=[...builds].filter(build=>!homepageBuildIsOwn(build)).sort((a,b)=>new Date(b.updated_at||b.created_at||0)-new Date(a.updated_at||a.created_at||0)).slice(0,4);
+  target.innerHTML=recent.length?`<div class="homepage-update-list">${recent.map(build=>`<article class="homepage-update-card" data-open-connect="${esc(build.id)}" tabindex="0" role="button"><img src="${esc(projectImageUrl(build.image_url))}" alt=""><div class="homepage-update-copy"><div class="homepage-update-kicker">Build updated</div><h3>${esc(build.name||"Untitled build")}</h3><p>By ${esc(build.owner_name||"RELAY Builder")}</p><span>${esc(dateText(build.updated_at||build.created_at))}</span></div></article>`).join("")}</div>`:`<div class="homepage-empty muted">No recent community updates yet.</div>`;
+ }catch(error){
+  console.error(error);
+  if(!homepageStillActive())return;
+  const target=$("#homepageCommunity");
+  if(target)target.innerHTML=`<div class="homepage-empty muted">Community updates could not be loaded.</div>`;
+ }
+}
+
+function currentPosition(){
+ return new Promise((resolve,reject)=>{
+  if(!navigator.geolocation){reject(new Error("Geolocation is not supported by this browser."));return;}
+  navigator.geolocation.getCurrentPosition(resolve,reject,{enableHighAccuracy:false,timeout:10000,maximumAge:10*60*1000});
+ });
+}
+
+function weatherCondition(code){
+ const value=Number(code);
+ if(value===0)return{label:"Clear",icon:"☀"};
+ if(value===1)return{label:"Mainly clear",icon:"☀"};
+ if(value===2)return{label:"Partly cloudy",icon:"⛅"};
+ if(value===3)return{label:"Overcast",icon:"☁"};
+ if([45,48].includes(value))return{label:"Foggy",icon:"☁"};
+ if([51,53,55,56,57].includes(value))return{label:"Drizzle",icon:"🌧"};
+ if([61,63,65,66,67,80,81,82].includes(value))return{label:"Rain",icon:"🌧"};
+ if([71,73,75,77,85,86].includes(value))return{label:"Snow",icon:"❄"};
+ if([95,96,99].includes(value))return{label:"Thunderstorms",icon:"⛈"};
+ return{label:"Current weather",icon:"◌"};
+}
+
+function weatherFlavor(current){
+ const code=Number(current?.weather_code);
+ const snowing=Number(current?.snowfall||0)>0||[71,73,75,77,85,86].includes(code);
+ const raining=Number(current?.rain||0)>0||Number(current?.showers||0)>0||Number(current?.precipitation||0)>0||[51,53,55,56,57,61,63,65,66,67,80,81,82,95,96,99].includes(code);
+ const sunny=[0,1].includes(code);
+ if(snowing)return"Bring out those snow tires, because it’s mountain season!";
+ if(raining)return"Seems a little wet, some drifting perhaps?";
+ if(sunny)return"Perfect day for a drive!";
+ return"Good weather to get some wrenching done.";
+}
+
+async function loadHomepageWeather(){
+ const root=$("#homepageWeather");
+ if(!root)return;
+ try{
+  if(!window.isSecureContext&&location.hostname!=="localhost"&&location.hostname!=="127.0.0.1")throw new Error("Location access requires HTTPS.");
+  const position=await currentPosition();
+  const latitude=position.coords.latitude;
+  const longitude=position.coords.longitude;
+  const params=new URLSearchParams({
+   latitude:String(latitude),
+   longitude:String(longitude),
+   current:"temperature_2m,apparent_temperature,precipitation,rain,showers,snowfall,weather_code,wind_speed_10m",
+   temperature_unit:"fahrenheit",
+   wind_speed_unit:"mph",
+   precipitation_unit:"inch",
+   timezone:"auto",
+  });
+  const response=await fetch(`https://api.open-meteo.com/v1/forecast?${params.toString()}`,{headers:{Accept:"application/json"}});
+  if(!response.ok)throw new Error(`Weather service returned ${response.status}.`);
+  const payload=await response.json();
+  if(!payload?.current)throw new Error("Current weather was unavailable.");
+  if(!homepageStillActive())return;
+  const target=$("#homepageWeather");
+  if(!target)return;
+  const current=payload.current;
+  const condition=weatherCondition(current.weather_code);
+  const temperature=Math.round(Number(current.temperature_2m));
+  const apparent=Math.round(Number(current.apparent_temperature));
+  const wind=Math.round(Number(current.wind_speed_10m));
+  target.innerHTML=`<div class="homepage-weather"><div class="homepage-weather-now"><span class="homepage-weather-icon" aria-hidden="true">${esc(condition.icon)}</span><div><strong>${Number.isFinite(temperature)?esc(temperature):"—"}°F</strong><span>${esc(condition.label)}</span></div></div><p class="homepage-weather-flavor">${esc(weatherFlavor(current))}</p><div class="homepage-weather-meta"><span>Feels like ${Number.isFinite(apparent)?esc(apparent):"—"}°F</span><span>Wind ${Number.isFinite(wind)?esc(wind):"—"} mph</span></div></div>`;
+ }catch(error){
+  console.warn("[RELAY] Local weather unavailable.",error);
+  if(!homepageStillActive())return;
+  const target=$("#homepageWeather");
+  if(!target)return;
+  const message=error?.message==="Location access requires HTTPS."?"Location access requires HTTPS. Open RELAY from a secure site to show local weather.":"Allow location access to show current weather for your area.";
+  target.innerHTML=`<div class="homepage-weather-unavailable"><strong>Local weather unavailable</strong><p class="muted">${esc(message)}</p></div>`;
+ }
+}
 
 function renderSettings(){
  const email=state.user?.email||"";
@@ -760,7 +929,8 @@ async function authSubmit(event) {
       await loadAccount();
       $("#authDialog").close();
       notify("Signed in.");
-      render();
+      if(location.hash==="#/home")render();
+      else location.hash="#/home";
     } catch (error) {
       console.error(error);
       authError.hidden = false;
@@ -772,7 +942,7 @@ async function authSubmit(event) {
   // Authentication
   // ---------------------------------------------------------------------------
 
-  async function signOut(){const r=await safe(()=>state.supabase.auth.signOut(),"Could not sign out.");if(r===null)return;state.user=null;state.profile=null;state.projects=guestProjects();location.hash="#/projects";notify("Signed out. Guest mode is active.")}
+  async function signOut(){const r=await safe(()=>state.supabase.auth.signOut(),"Could not sign out.");if(r===null)return;state.user=null;state.profile=null;state.projects=guestProjects();location.hash="#/";notify("Signed out. Guest mode is active.")}
 
   // ---------------------------------------------------------------------------
   // Import / export

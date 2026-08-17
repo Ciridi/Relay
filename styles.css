@@ -240,3 +240,66 @@ main{width:min(1180px,90vw);margin:0 auto}.hero{min-height:calc(100vh - 68px);di
  .objective-wizard-actions{grid-template-columns:1fr 1fr}
  .objective-wizard-actions .wizard-spacer{display:none}
 }
+
+
+/* Signed-in Homepage */
+.home-nav[hidden]{display:none!important}
+.homepage-page{padding-top:44px}
+.homepage-header{align-items:flex-start;margin-bottom:28px}
+.homepage-greeting{max-width:780px}
+.homepage-greeting h1{margin:0;font-size:clamp(2.6rem,6vw,5.4rem);letter-spacing:-.058em;line-height:.98}
+.homepage-greeting>p.muted{max-width:650px;margin:16px 0 0;font-size:1rem}
+.homepage-editor-button{margin-top:22px}
+.homepage-grid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(310px,.72fr);gap:22px;align-items:start}
+.homepage-main{display:grid;gap:22px;min-width:0}
+.homepage-card{padding:0;overflow:hidden}
+.homepage-section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:20px 22px;border-bottom:1px solid var(--line)}
+.homepage-section-head .eyebrow{margin-bottom:5px}
+.homepage-section-head h2{margin:0;font-size:1.12rem;letter-spacing:-.02em}
+.homepage-loading,.homepage-empty{padding:28px 22px}
+.homepage-objectives-panel{position:sticky;top:90px}
+.homepage-objective-list{display:grid}
+.homepage-objective-item{padding:17px 20px;border-bottom:1px solid var(--line)}
+.homepage-objective-item:last-child{border-bottom:0}
+.homepage-objective-project{color:var(--muted);font-size:.76rem;font-weight:680}
+.homepage-objective-item h3{margin:5px 0 9px;font-size:.98rem;line-height:1.32}
+.homepage-objective-deadline{color:var(--accent2);font-size:.78rem;font-weight:760;font-variant-numeric:tabular-nums}
+.homepage-objective-actions{padding:16px 20px;border-top:1px solid var(--line)}
+.homepage-objective-actions .button{width:100%}
+.homepage-update-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0}
+.homepage-update-card{display:grid;grid-template-columns:108px minmax(0,1fr);gap:14px;padding:16px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .18s}
+.homepage-update-card:nth-child(odd){border-right:1px solid var(--line)}
+.homepage-update-card:hover,.homepage-update-card:focus-visible{background:rgba(255,255,255,.045);outline:none}
+.homepage-update-card img{width:108px;height:82px;object-fit:cover;border-radius:11px;background:#222}
+.homepage-update-copy{min-width:0}
+.homepage-update-kicker{color:var(--accent2);font-size:.7rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+.homepage-update-copy h3{margin:3px 0 3px;font-size:.95rem;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.homepage-update-copy p{margin:0 0 7px;color:var(--muted);font-size:.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.homepage-update-copy span{color:var(--muted);font-size:.74rem}
+.homepage-weather-card{min-height:220px}
+.homepage-weather{padding:24px 22px}
+.homepage-weather-now{display:flex;align-items:center;gap:16px}
+.homepage-weather-icon{display:grid;place-items:center;width:58px;height:58px;flex:0 0 auto;border:1px solid var(--line);border-radius:17px;background:rgba(255,255,255,.035);font-size:1.8rem}
+.homepage-weather-now>div{display:grid;gap:1px}
+.homepage-weather-now strong{font-size:2.25rem;line-height:1;letter-spacing:-.04em}
+.homepage-weather-now span{color:var(--muted);font-size:.9rem}
+.homepage-weather-flavor{margin:22px 0 13px;font-size:1.08rem;font-weight:720}
+.homepage-weather-meta{display:flex;gap:16px;flex-wrap:wrap;color:var(--muted);font-size:.8rem}
+.homepage-weather-unavailable{padding:26px 22px}
+.homepage-weather-unavailable strong{display:block;margin-bottom:6px}
+.homepage-weather-unavailable p{margin:0}
+
+@media(max-width:940px){
+ .homepage-grid{grid-template-columns:1fr}
+ .homepage-objectives-panel{position:static;order:-1}
+}
+@media(max-width:760px){
+ .topnav .home-nav:not([hidden]){display:block!important}
+ .homepage-page{padding-top:34px}
+ .homepage-update-list{grid-template-columns:1fr}
+ .homepage-update-card:nth-child(odd){border-right:0}
+ .homepage-update-card{grid-template-columns:88px minmax(0,1fr)}
+ .homepage-update-card img{width:88px;height:70px}
+ .homepage-section-head{align-items:flex-start;flex-direction:column}
+ .homepage-section-head .button{width:100%}
+}
