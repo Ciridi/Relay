@@ -44,6 +44,7 @@
     currentConnectBuild: null,
     timelineProjectId: null,
     timelineMode: "view",
+    homepageClockTimer: null,
   };
 
   const $ = (selector) => document.querySelector(selector);
@@ -84,12 +85,16 @@
       currency: "USD",
     }).format(Number(value) || 0);
 
-  const dateText = (value) =>
-    value
-      ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(
-          new Date(value),
-        )
-      : "—";
+  const dateText = (value) => {
+    if (!value) return "—";
+    const raw = String(value).trim();
+    const dateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const date = dateOnly
+      ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+      : new Date(raw);
+    if (Number.isNaN(date.getTime())) return "—";
+    return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
+  };
 
   function localDateKey(value) {
     if (!value) return "";
@@ -270,6 +275,7 @@ function syncHomepageNav(){
 function render(){
  syncHomepageNav();
  const h=location.hash.replace(/^#\/?/,"");
+ if(h!=="home")stopHomepageClock();
  if(h.startsWith("connect/")){
   state.currentConnectBuildId=decodeURIComponent(h.split("/")[1]||"");
   renderConnectBuild();
@@ -323,7 +329,8 @@ function renderHomepage(){
  if(!logged()){renderHome();return;}
  const username=homepageUsername();
  const greeting=homepageGreeting(username);
- main.innerHTML=`<section class="page homepage-page"><div class="page-header homepage-header"><div class="homepage-greeting"><p class="eyebrow">HOMEPAGE</p><h1>${esc(greeting)}</h1><p class="muted">Here’s what’s happening with your builds and the RELAY community.</p><button class="button primary homepage-editor-button" data-route="projects">Take me to the editor</button></div></div><div class="homepage-grid"><div class="homepage-main"><section class="panel homepage-card homepage-weather-card"><div class="homepage-section-head"><div><p class="eyebrow">LOCAL WEATHER</p><h2>Current conditions</h2></div></div><div id="homepageWeather" class="homepage-loading">Finding your local weather…</div></section><section class="panel homepage-card"><div class="homepage-section-head"><div><p class="eyebrow">CONNECT</p><h2>Recent community updates</h2></div><button type="button" class="button ghost" data-route="connect">View Connect</button></div><div id="homepageCommunity" class="homepage-loading">Loading recent builds…</div></section></div><aside class="panel homepage-card homepage-objectives-panel"><div class="homepage-section-head"><div><p class="eyebrow">PLANNING</p><h2>Current Objectives</h2></div></div><div id="homepageObjectives" class="homepage-loading">Loading objectives…</div><div class="homepage-objective-actions"><button type="button" class="button primary" data-route="timeline">Manage Objectives</button></div></aside></div></section>`;
+ main.innerHTML=`<section class="page homepage-page"><div class="page-header homepage-header"><div class="homepage-greeting"><p class="eyebrow">HOMEPAGE</p><h1>${esc(greeting)}</h1><p class="muted">Here’s what’s happening with your builds and the RELAY community.</p><button class="button primary homepage-editor-button" data-route="projects">Take me to the editor</button></div><div id="homepageWeather" class="homepage-weather-blurb" aria-live="polite"><div class="homepage-weather-line"><span id="homepageClock">${esc(homepageTimeText())}</span></div><div class="homepage-weather-status muted">Finding your local weather…</div></div></div><div class="homepage-grid"><div class="homepage-main"><section class="panel homepage-card"><div class="homepage-section-head"><div><p class="eyebrow">CONNECT</p><h2>Recent community updates</h2></div><button type="button" class="button ghost" data-route="connect">View Connect</button></div><div id="homepageCommunity" class="homepage-loading">Loading recent activity…</div></section></div><aside class="panel homepage-card homepage-objectives-panel"><div class="homepage-section-head"><div><p class="eyebrow">PLANNING</p><h2>Current Objectives</h2></div></div><div id="homepageObjectives" class="homepage-loading">Loading objectives…</div><div class="homepage-objective-actions"><button type="button" class="button primary" data-route="timeline">Manage Objectives</button></div></aside></div></section>`;
+ startHomepageClock();
  loadHomepageObjectives();
  loadHomepageCommunity();
  loadHomepageWeather();
@@ -368,22 +375,80 @@ function homepageBuildIsOwn(build){
  return Boolean(ownerName&&username&&ownerName===username);
 }
 
+function homepageActivityTime(value){
+ if(!value)return 0;
+ const raw=String(value).trim();
+ const dateOnly=raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+ const date=dateOnly?new Date(Number(dateOnly[1]),Number(dateOnly[2])-1,Number(dateOnly[3])):new Date(raw);
+ return Number.isNaN(date.getTime())?0:date.getTime();
+}
+
+function latestPublicBuildActivity(payload){
+ const candidates=[];
+ for(const part of Array.isArray(payload?.parts)?payload.parts:[]){
+  const activityDate=part.install_date||part.created_at;
+  if(activityDate)candidates.push({type:"part",date:activityDate,time:homepageActivityTime(activityDate)});
+ }
+ for(const post of Array.isArray(payload?.build_logs)?payload.build_logs:[]){
+  if(post.created_at)candidates.push({type:"post",date:post.created_at,time:homepageActivityTime(post.created_at)});
+ }
+ return candidates.sort((a,b)=>b.time-a.time)[0]||null;
+}
+
+async function fetchHomepageBuildActivity(build){
+ const {data,error}=await state.supabase.rpc("connect_public_build",{build_id:build.id});
+ if(error)throw error;
+ const activity=latestPublicBuildActivity(data);
+ return activity?{build,activity}:null;
+}
+
 async function loadHomepageCommunity(){
  const root=$("#homepageCommunity");
- if(!root)return;
+ if(!root||!state.supabase)return;
  try{
-  const builds=await fetchPublicBuilds();
+  const builds=(await fetchPublicBuilds()).filter(build=>!homepageBuildIsOwn(build));
+  const settled=await Promise.allSettled(builds.map(fetchHomepageBuildActivity));
   if(!homepageStillActive())return;
   const target=$("#homepageCommunity");
   if(!target)return;
-  const recent=[...builds].filter(build=>!homepageBuildIsOwn(build)).sort((a,b)=>new Date(b.updated_at||b.created_at||0)-new Date(a.updated_at||a.created_at||0)).slice(0,4);
-  target.innerHTML=recent.length?`<div class="homepage-update-list">${recent.map(build=>`<article class="homepage-update-card" data-open-connect="${esc(build.id)}" tabindex="0" role="button"><img src="${esc(projectImageUrl(build.image_url))}" alt=""><div class="homepage-update-copy"><div class="homepage-update-kicker">Build updated</div><h3>${esc(build.name||"Untitled build")}</h3><p>By ${esc(build.owner_name||"RELAY Builder")}</p><span>${esc(dateText(build.updated_at||build.created_at))}</span></div></article>`).join("")}</div>`:`<div class="homepage-empty muted">No recent community updates yet.</div>`;
+  const recent=settled
+   .filter(result=>result.status==="fulfilled"&&result.value)
+   .map(result=>result.value)
+   .sort((a,b)=>b.activity.time-a.activity.time)
+   .slice(0,4);
+  target.innerHTML=recent.length?`<div class="homepage-update-list">${recent.map(({build,activity})=>`<article class="homepage-update-card" data-open-connect="${esc(build.id)}" tabindex="0" role="button"><img src="${esc(projectImageUrl(build.image_url))}" alt=""><div class="homepage-update-copy"><div class="homepage-update-kicker">${activity.type==="part"?"Part activity":"Build log post"}</div><h3>${esc(build.name||"Untitled build")}</h3><p>By ${esc(build.owner_name||"RELAY Builder")}</p><span>${esc(dateText(activity.date))}</span></div></article>`).join("")}</div>`:`<div class="homepage-empty muted">No recent community activity yet.</div>`;
  }catch(error){
   console.error(error);
   if(!homepageStillActive())return;
   const target=$("#homepageCommunity");
   if(target)target.innerHTML=`<div class="homepage-empty muted">Community updates could not be loaded.</div>`;
  }
+}
+
+function homepageTimeText(timeZone){
+ try{
+  return new Intl.DateTimeFormat(undefined,{hour:"numeric",minute:"2-digit",timeZone:timeZone||undefined}).format(new Date());
+ }catch{
+  return new Intl.DateTimeFormat(undefined,{hour:"numeric",minute:"2-digit"}).format(new Date());
+ }
+}
+
+function stopHomepageClock(){
+ if(state.homepageClockTimer){
+  clearInterval(state.homepageClockTimer);
+  state.homepageClockTimer=null;
+ }
+}
+
+function startHomepageClock(timeZone){
+ stopHomepageClock();
+ const update=()=>{
+  const clock=$("#homepageClock");
+  if(clock)clock.textContent=homepageTimeText(timeZone);
+  else stopHomepageClock();
+ };
+ update();
+ state.homepageClockTimer=setInterval(update,30000);
 }
 
 function currentPosition(){
@@ -447,14 +512,16 @@ async function loadHomepageWeather(){
   const temperature=Math.round(Number(current.temperature_2m));
   const apparent=Math.round(Number(current.apparent_temperature));
   const wind=Math.round(Number(current.wind_speed_10m));
-  target.innerHTML=`<div class="homepage-weather"><div class="homepage-weather-now"><span class="homepage-weather-icon" aria-hidden="true">${esc(condition.icon)}</span><div><strong>${Number.isFinite(temperature)?esc(temperature):"—"}°F</strong><span>${esc(condition.label)}</span></div></div><p class="homepage-weather-flavor">${esc(weatherFlavor(current))}</p><div class="homepage-weather-meta"><span>Feels like ${Number.isFinite(apparent)?esc(apparent):"—"}°F</span><span>Wind ${Number.isFinite(wind)?esc(wind):"—"} mph</span></div></div>`;
+  target.innerHTML=`<div class="homepage-weather-line"><span id="homepageClock">${esc(homepageTimeText(payload.timezone))}</span><span aria-hidden="true">·</span><strong>${Number.isFinite(temperature)?esc(temperature):"—"}°F</strong><span>${esc(condition.icon)} ${esc(condition.label)}</span></div><p class="homepage-weather-flavor">${esc(weatherFlavor(current))}</p><div class="homepage-weather-meta"><span>Feels like ${Number.isFinite(apparent)?esc(apparent):"—"}°F</span><span>Wind ${Number.isFinite(wind)?esc(wind):"—"} mph</span></div>`;
+  startHomepageClock(payload.timezone);
  }catch(error){
   console.warn("[RELAY] Local weather unavailable.",error);
   if(!homepageStillActive())return;
   const target=$("#homepageWeather");
   if(!target)return;
-  const message=error?.message==="Location access requires HTTPS."?"Location access requires HTTPS. Open RELAY from a secure site to show local weather.":"Allow location access to show current weather for your area.";
-  target.innerHTML=`<div class="homepage-weather-unavailable"><strong>Local weather unavailable</strong><p class="muted">${esc(message)}</p></div>`;
+  const message=error?.message==="Location access requires HTTPS."?"Location access requires HTTPS for local weather.":"Allow location access to show local weather.";
+  target.innerHTML=`<div class="homepage-weather-line"><span id="homepageClock">${esc(homepageTimeText())}</span></div><div class="homepage-weather-status muted">${esc(message)}</div>`;
+  startHomepageClock();
  }
 }
 
