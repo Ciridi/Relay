@@ -276,18 +276,12 @@ main{width:min(1180px,90vw);margin:0 auto}.hero{min-height:calc(100vh - 68px);di
 .homepage-update-copy h3{margin:3px 0 3px;font-size:.95rem;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .homepage-update-copy p{margin:0 0 7px;color:var(--muted);font-size:.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .homepage-update-copy span{color:var(--muted);font-size:.74rem}
-.homepage-weather-card{min-height:220px}
-.homepage-weather{padding:24px 22px}
-.homepage-weather-now{display:flex;align-items:center;gap:16px}
-.homepage-weather-icon{display:grid;place-items:center;width:58px;height:58px;flex:0 0 auto;border:1px solid var(--line);border-radius:17px;background:rgba(255,255,255,.035);font-size:1.8rem}
-.homepage-weather-now>div{display:grid;gap:1px}
-.homepage-weather-now strong{font-size:2.25rem;line-height:1;letter-spacing:-.04em}
-.homepage-weather-now span{color:var(--muted);font-size:.9rem}
-.homepage-weather-flavor{margin:22px 0 13px;font-size:1.08rem;font-weight:720}
-.homepage-weather-meta{display:flex;gap:16px;flex-wrap:wrap;color:var(--muted);font-size:.8rem}
-.homepage-weather-unavailable{padding:26px 22px}
-.homepage-weather-unavailable strong{display:block;margin-bottom:6px}
-.homepage-weather-unavailable p{margin:0}
+.homepage-weather-blurb{margin-left:auto;max-width:330px;text-align:right;align-self:flex-start;padding-top:4px}
+.homepage-weather-line{display:flex;justify-content:flex-end;align-items:baseline;gap:7px;flex-wrap:wrap;font-size:.9rem}
+.homepage-weather-line strong{font-size:1rem;color:var(--text)}
+.homepage-weather-status{margin-top:4px;font-size:.76rem}
+.homepage-weather-flavor{margin:5px 0 4px;font-size:.84rem;font-weight:720}
+.homepage-weather-meta{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:.72rem}
 
 @media(max-width:940px){
  .homepage-grid{grid-template-columns:1fr}
@@ -296,6 +290,8 @@ main{width:min(1180px,90vw);margin:0 auto}.hero{min-height:calc(100vh - 68px);di
 @media(max-width:760px){
  .topnav .home-nav:not([hidden]){display:block!important}
  .homepage-page{padding-top:34px}
+ .homepage-weather-blurb{margin-left:0;max-width:none;text-align:left;align-self:flex-start;padding-top:0}
+ .homepage-weather-line,.homepage-weather-meta{justify-content:flex-start}
  .homepage-update-list{grid-template-columns:1fr}
  .homepage-update-card:nth-child(odd){border-right:0}
  .homepage-update-card{grid-template-columns:88px minmax(0,1fr)}
