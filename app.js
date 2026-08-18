@@ -365,16 +365,6 @@ async function loadHomepageObjectives(){
  }
 }
 
-function homepageBuildIsOwn(build){
- const buildId=String(build?.id||"");
- if(buildId&&state.projects.some(project=>String(project.id)===buildId))return true;
- const possibleOwnerId=build?.user_id||build?.owner_id||build?.profile_id||"";
- if(possibleOwnerId&&state.user?.id)return String(possibleOwnerId)===String(state.user.id);
- const ownerName=String(build?.owner_name||"").trim().toLowerCase();
- const username=homepageUsername().trim().toLowerCase();
- return Boolean(ownerName&&username&&ownerName===username);
-}
-
 function homepageActivityTime(value){
  if(!value)return 0;
  const raw=String(value).trim();
@@ -396,17 +386,33 @@ function latestPublicBuildActivity(payload){
 }
 
 async function fetchHomepageBuildActivity(build){
+ // Use the same public-build RPC that powers Connect. This keeps the homepage
+ // compatible with the current database functions and avoids requiring a
+ // second homepage-only migration.
  const {data,error}=await state.supabase.rpc("connect_public_build",{build_id:build.id});
  if(error)throw error;
  const activity=latestPublicBuildActivity(data);
- return activity?{build,activity}:null;
+ if(!activity)return null;
+ return{build:{...build,...(data?.project||{})},activity};
 }
 
 async function loadHomepageCommunity(){
  const root=$("#homepageCommunity");
  if(!root||!state.supabase)return;
  try{
-  const builds=(await fetchPublicBuilds()).filter(build=>!homepageBuildIsOwn(build));
+  // Requirement: show the four PUBLIC projects with the newest part/log
+  // activity. Do not exclude projects based on ownership. Sample community
+  // builds may intentionally reuse an existing auth.users owner to satisfy
+  // the projects.user_id foreign key, and filtering by owner can otherwise
+  // make the entire feed disappear for that account.
+  const publicBuilds=await fetchPublicBuilds();
+  const seen=new Set();
+  const builds=publicBuilds.filter(build=>{
+   const id=String(build?.id||"");
+   if(!id||seen.has(id))return false;
+   seen.add(id);
+   return true;
+  });
   const settled=await Promise.allSettled(builds.map(fetchHomepageBuildActivity));
   if(!homepageStillActive())return;
   const target=$("#homepageCommunity");
