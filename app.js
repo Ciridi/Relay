@@ -329,11 +329,68 @@ function renderHomepage(){
  if(!logged()){renderHome();return;}
  const username=homepageUsername();
  const greeting=homepageGreeting(username);
- main.innerHTML=`<section class="page homepage-page"><div class="page-header homepage-header"><div class="homepage-greeting"><p class="eyebrow">HOMEPAGE</p><h1>${esc(greeting)}</h1><p class="muted">Here’s what’s happening with your builds and the RELAY community.</p><button class="button primary homepage-editor-button" data-route="projects">Take me to the editor</button></div><div id="homepageWeather" class="homepage-weather-blurb" aria-live="polite"><div class="homepage-weather-line"><span id="homepageClock">${esc(homepageTimeText())}</span></div><div class="homepage-weather-status muted">Finding your local weather…</div></div></div><div class="homepage-grid"><div class="homepage-main"><section class="panel homepage-card"><div class="homepage-section-head"><div><p class="eyebrow">CONNECT</p><h2>Recent community updates</h2></div><button type="button" class="button ghost" data-route="connect">View Connect</button></div><div id="homepageCommunity" class="homepage-loading">Loading recent activity…</div></section></div><aside class="panel homepage-card homepage-objectives-panel"><div class="homepage-section-head"><div><p class="eyebrow">PLANNING</p><h2>Current Objectives</h2></div></div><div id="homepageObjectives" class="homepage-loading">Loading objectives…</div><div class="homepage-objective-actions"><button type="button" class="button primary" data-route="timeline">Manage Objectives</button></div></aside></div></section>`;
+ const quickProjectOptions=state.projects.map(project=>{
+  const vehicle=vehicleLabel(project);
+  return`<button type="button" class="homepage-quick-project-option" data-homepage-quick-project="${esc(project.id)}" role="option" aria-selected="false"><img src="${esc(projectImageUrl(project.image_url||project.image))}" alt=""><span><strong>${esc(project.name||"Untitled project")}</strong>${vehicle?`<small>${esc(vehicle)}</small>`:""}</span></button>`;
+ }).join("");
+ main.innerHTML=`<section class="page homepage-page"><div class="page-header homepage-header"><div class="homepage-greeting"><p class="eyebrow">HOMEPAGE</p><h1>${esc(greeting)}</h1><p class="muted">Here’s what’s happening with your builds and the RELAY community.</p><button class="button primary homepage-editor-button" data-route="projects">Take me to the editor</button></div><div id="homepageWeather" class="homepage-weather-blurb" aria-live="polite"><div class="homepage-weather-line"><span id="homepageClock">${esc(homepageTimeText())}</span></div><div class="homepage-weather-status muted">Finding your local weather…</div></div></div><div class="homepage-grid"><div class="homepage-main"><section class="panel homepage-card homepage-quick-update"><div class="homepage-section-head"><div><p class="eyebrow">PROJECTS</p><h2>Quick Update</h2></div></div>${state.projects.length?`<form id="homepageQuickUpdateForm" class="homepage-quick-update-form"><div class="homepage-quick-project-field"><span class="homepage-quick-project-label">Car</span><div class="homepage-quick-project-picker" id="homepageQuickProjectPicker"><button type="button" class="homepage-quick-project-button" id="homepageQuickProjectButton" aria-haspopup="listbox" aria-expanded="false"><span class="homepage-quick-project-placeholder">Select a car</span><span class="homepage-quick-project-chevron" aria-hidden="true">⌄</span></button><input type="hidden" id="homepageQuickProject" value=""><div class="homepage-quick-project-menu" id="homepageQuickProjectMenu" role="listbox" aria-label="Select a car" hidden>${quickProjectOptions}</div></div></div><label>Update<textarea id="homepageQuickText" rows="4" maxlength="3000" required placeholder="What happened? Add a quick update to this project’s build log."></textarea></label><div class="homepage-quick-update-actions"><button type="submit" class="button primary" id="homepageQuickPost">Post Update</button></div></form>`:`<div class="homepage-empty muted">Create a project before posting a quick update.</div>`}</section><section class="panel homepage-card"><div class="homepage-section-head"><div><p class="eyebrow">CONNECT</p><h2>Recent community updates</h2></div><button type="button" class="button ghost" data-route="connect">View Connect</button></div><div id="homepageCommunity" class="homepage-loading">Loading recent activity…</div></section></div><aside class="panel homepage-card homepage-objectives-panel"><div class="homepage-section-head"><div><p class="eyebrow">PLANNING</p><h2>Current Objectives</h2></div></div><div id="homepageObjectives" class="homepage-loading">Loading objectives…</div><div class="homepage-objective-actions"><button type="button" class="button primary" data-route="timeline">Manage Objectives</button></div></aside></div></section>`;
+ $("#homepageQuickUpdateForm")?.addEventListener("submit",addHomepageQuickUpdate);
+ const quickPicker=$("#homepageQuickProjectPicker");
+ quickPicker?.addEventListener("click",event=>{
+  const option=event.target.closest?.("[data-homepage-quick-project]");
+  if(option){selectHomepageQuickProject(option.dataset.homepageQuickProject);return;}
+  const toggle=event.target.closest?.("#homepageQuickProjectButton");
+  if(toggle)toggleHomepageQuickProjectMenu();
+ });
+ quickPicker?.addEventListener("keydown",event=>{
+  if(event.key!=="Escape")return;
+  closeHomepageQuickProjectMenu();
+  $("#homepageQuickProjectButton")?.focus();
+ });
+ quickPicker?.addEventListener("focusout",()=>setTimeout(()=>{
+  const picker=$("#homepageQuickProjectPicker");
+  if(picker&&!picker.contains(document.activeElement))closeHomepageQuickProjectMenu();
+ },0));
+ $("#homepageObjectives")?.addEventListener("click",event=>{
+  const button=event.target.closest?.("[data-homepage-complete-objective]");
+  if(!button)return;
+  completeHomepageObjective(button.dataset.homepageCompleteObjective,button.dataset.projectId,button);
+ });
  startHomepageClock();
  loadHomepageObjectives();
  loadHomepageCommunity();
  loadHomepageWeather();
+}
+
+function closeHomepageQuickProjectMenu(){
+ const menu=$("#homepageQuickProjectMenu");
+ const button=$("#homepageQuickProjectButton");
+ if(menu)menu.hidden=true;
+ if(button)button.setAttribute("aria-expanded","false");
+}
+
+function toggleHomepageQuickProjectMenu(){
+ const menu=$("#homepageQuickProjectMenu");
+ const button=$("#homepageQuickProjectButton");
+ if(!menu||!button)return;
+ const open=menu.hidden;
+ menu.hidden=!open;
+ button.setAttribute("aria-expanded",open?"true":"false");
+}
+
+function selectHomepageQuickProject(projectId){
+ const project=state.projects.find(item=>String(item.id)===String(projectId));
+ const input=$("#homepageQuickProject");
+ const button=$("#homepageQuickProjectButton");
+ if(!project||!input||!button)return;
+ input.value=String(project.id);
+ button.innerHTML=`<span class="homepage-quick-project-selected"><img src="${esc(projectImageUrl(project.image_url||project.image))}" alt=""><span>${esc(project.name||"Untitled project")}</span></span><span class="homepage-quick-project-chevron" aria-hidden="true">⌄</span>`;
+ document.querySelectorAll("[data-homepage-quick-project]").forEach(option=>{
+  const selected=String(option.dataset.homepageQuickProject)===String(project.id);
+  option.classList.toggle("selected",selected);
+  option.setAttribute("aria-selected",selected?"true":"false");
+ });
+ closeHomepageQuickProjectMenu();
 }
 
 function homepageStillActive(){
@@ -356,13 +413,65 @@ async function loadHomepageObjectives(){
   if(!target)return;
   const projectNames=new Map(state.projects.map(project=>[project.id,project.name||"Untitled project"]));
   const objectives=Array.isArray(data)?data:[];
-  target.innerHTML=objectives.length?`<div class="homepage-objective-list">${objectives.map(item=>`<article class="homepage-objective-item"><div class="homepage-objective-project">From ${esc(projectNames.get(item.project_id)||"Untitled project")}</div><h3>${esc(item.objective_name||"Untitled objective")}</h3><div class="homepage-objective-deadline">Deadline ${esc(numericDateText(item.deadline))}</div></article>`).join("")}</div>`:`<div class="homepage-empty muted">No active objectives yet. Create one in Planning Mode.</div>`;
+  const today=todayKey();
+  target.innerHTML=objectives.length?`<div class="homepage-objective-list">${objectives.map(item=>{
+   const deadlineKey=localDateKey(item.deadline);
+   const overdue=Boolean(deadlineKey&&deadlineKey<today);
+   return`<article class="homepage-objective-item ${overdue?"overdue":""}"><div class="homepage-objective-main"><div class="homepage-objective-project">From ${esc(projectNames.get(item.project_id)||"Untitled project")}</div><h3>${esc(item.objective_name||"Untitled objective")}</h3><div class="homepage-objective-deadline">Deadline ${esc(numericDateText(item.deadline))}</div></div><button type="button" class="button primary homepage-objective-complete" data-homepage-complete-objective="${esc(item.id)}" data-project-id="${esc(item.project_id)}">Complete task</button></article>`;
+  }).join("")}</div>`:`<div class="homepage-empty muted">No active objectives yet. Create one in Planning Mode.</div>`;
  }catch(error){
   console.error(error);
   if(!homepageStillActive())return;
   const target=$("#homepageObjectives");
   if(target)target.innerHTML=`<div class="homepage-empty muted">Current objectives could not be loaded.</div>`;
  }
+}
+
+async function completeHomepageObjective(objectiveId,projectId,button){
+ if(!logged()||!state.supabase||!objectiveId||!projectId)return;
+ if(button){button.disabled=true;button.textContent="Completing…";}
+ const result=await safe(async()=>{
+  const query=await state.supabase.rpc("complete_objective",{p_objective_id:objectiveId});
+  if(query.error)throw query.error;
+  return query.data;
+ },"Could not mark this objective as completed.");
+ if(result===null){
+  if(button){button.disabled=false;button.textContent="Complete task";}
+  return;
+ }
+ await touch(projectId);
+ notify("Objective completed and added to your build log.");
+ await loadHomepageObjectives();
+ loadHomepageCommunity();
+}
+
+async function addHomepageQuickUpdate(event){
+ event.preventDefault();
+ if(!logged()||!state.supabase)return;
+ const projectId=$("#homepageQuickProject")?.value||"";
+ const text=$("#homepageQuickText")?.value.trim()||"";
+ if(!projectId){notify("Select a car.");$("#homepageQuickProjectButton")?.focus();return;}
+ if(!text)return;
+ if(!state.projects.some(project=>String(project.id)===String(projectId))){
+  notify("Select one of your projects.");
+  return;
+ }
+ const button=$("#homepageQuickPost");
+ if(button){button.disabled=true;button.textContent="Posting…";}
+ const result=await safe(async()=>{
+  const query=await state.supabase.from("build_logs").insert({project_id:projectId,text}).select().single();
+  if(query.error)throw query.error;
+  return query.data;
+ },"Could not save this quick update.");
+ if(result){
+  await touch(projectId);
+  const input=$("#homepageQuickText");
+  if(input)input.value="";
+  notify("Build log posted.");
+  loadHomepageCommunity();
+ }
+ const currentButton=$("#homepageQuickPost");
+ if(currentButton){currentButton.disabled=false;currentButton.textContent="Post Update";}
 }
 
 function homepageActivityTime(value){
