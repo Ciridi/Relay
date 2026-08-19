@@ -47,6 +47,7 @@
     homepageClockTimer: null,
     axleMessages: [],
     axleBusy: false,
+    axleAction: null,
   };
 
   const $ = (selector) => document.querySelector(selector);
@@ -312,51 +313,391 @@ function render(){
 // ---------------------------------------------------------------------------
 
 const AXLE_ICON = "animation.gif";
+let axleBannerTimer = null;
 
 function normalizeAxleMessage(value) {
   return String(value || "")
     .toLowerCase()
     .replace(/[’']/g, "")
-    .replace(/[^a-z0-9\s?]/g, " ")
+    .replace(/[^a-z0-9\s?./:$-]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function axleLocalReply(message) {
-  const text = normalizeAxleMessage(message);
-
-  const hasAny = (...phrases) => phrases.some((phrase) => {
+function axleHasAny(text, ...phrases) {
+  return phrases.some((phrase) => {
     if (text === phrase) return true;
     if (phrase.includes(" ")) return text.includes(phrase);
     return text.split(/\s+/).includes(phrase);
   });
+}
+
+function axleProjectListText(prefix = "Which project should I use?") {
+  if (!state.projects.length) return `${prefix}\nYou do not have any projects yet.`;
+  const projects = state.projects.slice(0, 12);
+  return `${prefix}\n${projects.map((project, index) => `${index + 1}. ${project.name || "Untitled project"}`).join("\n")}${state.projects.length > projects.length ? "\n…" : ""}`;
+}
+
+function axleProjectByReply(value) {
+  const raw = String(value || "").trim();
+  const normalized = normalizeAxleMessage(raw);
+  const number = Number.parseInt(normalized, 10);
+  if (Number.isInteger(number) && number >= 1 && number <= state.projects.length) {
+    return state.projects[number - 1];
+  }
+
+  const exact = state.projects.find((project) => normalizeAxleMessage(project.name) === normalized);
+  if (exact) return exact;
+
+  const partial = state.projects.filter((project) => {
+    const name = normalizeAxleMessage(project.name);
+    return name && (name.includes(normalized) || normalized.includes(name));
+  });
+  return partial.length === 1 ? partial[0] : null;
+}
+
+function axleProjectMentionedInMessage(message) {
+  const text = normalizeAxleMessage(message);
+  return [...state.projects]
+    .sort((a, b) => String(b.name || "").length - String(a.name || "").length)
+    .find((project) => {
+      const name = normalizeAxleMessage(project.name);
+      return name && text.includes(name);
+    }) || null;
+}
+
+function axleDateValue(value, { allowSkip = false } = {}) {
+  const text = String(value || "").trim().toLowerCase();
+  if (allowSkip && axleHasAny(text, "skip", "none", "no date", "n/a", "na")) return null;
+
+  const now = new Date();
+  const localKey = (date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  };
+  if (text === "today") return localKey(now);
+  if (text === "tomorrow") {
+    const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    return localKey(tomorrow);
+  }
+
+  const iso = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  const slash = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  let year;
+  let month;
+  let day;
+  if (iso) {
+    year = Number(iso[1]);
+    month = Number(iso[2]);
+    day = Number(iso[3]);
+  } else if (slash) {
+    month = Number(slash[1]);
+    day = Number(slash[2]);
+    year = Number(slash[3]);
+  } else {
+    return undefined;
+  }
+
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return undefined;
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function axlePartCategory(value) {
+  const text = normalizeAxleMessage(value).replace(/\s+/g, "");
+  const aliases = {
+    engine: "ENGINE",
+    suspension: "SUSPENSION",
+    brakes: "BRAKES",
+    brake: "BRAKES",
+    interior: "INTERIOR",
+    wheels: "WHEELS",
+    wheel: "WHEELS",
+    paint: "PAINT",
+    bodykit: "BODYKIT",
+    body: "BODYKIT",
+    exhaust: "EXHAUST",
+    electrical: "ELECTRICAL",
+    electric: "ELECTRICAL",
+    other: "OTHER",
+  };
+  return aliases[text] || null;
+}
+
+function axleOptionalText(value) {
+  const text = String(value || "").trim();
+  return axleHasAny(normalizeAxleMessage(text), "skip", "none", "no", "n/a", "na") ? null : (text || null);
+}
+
+function axleActionNextPrompt(action) {
+  const projectName = action.data.projectName || "this project";
+  switch (action.step) {
+    case "objective_name": return `What objective should I add to ${projectName}?`;
+    case "objective_deadline": return "What is the deadline? Use YYYY-MM-DD, MM/DD/YYYY, today, or tomorrow.";
+    case "objective_notes": return "Any additional notes? Type skip if you do not want to add any.";
+    case "post_text": return `What should I post to ${projectName}'s build log?`;
+    case "part_name": return `What part should I add to ${projectName}?`;
+    case "part_cost": return "How much did it cost? Enter a number, or 0 if there was no cost.";
+    case "part_category": return `What category is it? ${CATEGORIES.join(", ")}.`;
+    case "part_date": return "What was the install date? Use YYYY-MM-DD or MM/DD/YYYY, or type skip.";
+    case "part_notes": return "Any install notes? Type skip if none.";
+    case "part_source": return "Where did you get it? Enter the source name, or type skip.";
+    case "part_link": return "Do you have a source link? Paste the URL, or type skip.";
+    default: return "What would you like to do next?";
+  }
+}
+
+function axleSelectProject(action, project) {
+  action.data.projectId = project.id;
+  action.data.projectName = project.name || "Untitled project";
+  if (action.type === "objective") action.step = "objective_name";
+  if (action.type === "post") action.step = "post_text";
+  if (action.type === "part") action.step = "part_name";
+  return axleActionNextPrompt(action);
+}
+
+function startAxleAction(type, message = "") {
+  if (!state.projects.length) {
+    return "Bark! You need a project before I can do that. Create a project first, then come back and ask me again.";
+  }
+  if (type === "objective" && !logged()) {
+    return "Bark! Objectives are connected to your RELAY account. Sign in first, then ask me to add an objective.";
+  }
+
+  const action = { type, step: "project", data: {} };
+  state.axleAction = action;
+  const mentioned = axleProjectMentionedInMessage(message);
+  if (mentioned) return axleSelectProject(action, mentioned);
+  if (state.projects.length === 1) return axleSelectProject(action, state.projects[0]);
+  return axleProjectListText(type === "objective" ? "Which project should get the objective?" : type === "post" ? "Which project should I post to?" : "Which project should get the part?");
+}
+
+async function axleCreateObjective(action) {
+  if (!logged() || !state.supabase) return "Bark! I need you to be signed in before I can save objectives.";
+  const project = state.projects.find((item) => String(item.id) === String(action.data.projectId));
+  if (!project) return "Bark! I cannot find that project anymore. Please start the objective again.";
+
+  const result = await safe(async () => {
+    const query = await state.supabase.from("objectives").insert({
+      project_id: project.id,
+      objective_name: action.data.objectiveName,
+      deadline: action.data.deadline,
+      additional_notes: action.data.notes || null,
+    }).select().single();
+    if (query.error) throw query.error;
+    return query.data;
+  }, "Could not save this objective.");
+  if (!result) return "Bark! I could not save that objective. Try the command again in a moment.";
+  await touch(project.id);
+  await safe(() => loadProjects(), "Objective saved, but the project list could not refresh.");
+  return `Bark! Objective added to ${project.name}: “${action.data.objectiveName}” with a deadline of ${numericDateText(action.data.deadline)}.`;
+}
+
+async function axlePostUpdate(action) {
+  const project = state.projects.find((item) => String(item.id) === String(action.data.projectId));
+  if (!project) return "Bark! I cannot find that project anymore. Please start the post again.";
+
+  if (!logged()) {
+    project.logs = Array.isArray(project.logs) ? project.logs : [];
+    project.logs.unshift({ id: uid(), text: action.data.text, created_at: new Date().toISOString() });
+    project.updated_at = new Date().toISOString();
+    return `Bark! Posted that update to ${project.name} for this guest session.`;
+  }
+  if (!state.supabase) return "Bark! RELAY is not connected to the database right now.";
+
+  const result = await safe(async () => {
+    const query = await state.supabase.from("build_logs").insert({ project_id: project.id, text: action.data.text }).select().single();
+    if (query.error) throw query.error;
+    return query.data;
+  }, "Could not save this build log update.");
+  if (!result) return "Bark! I could not post that update. Try the command again in a moment.";
+  await touch(project.id);
+  await safe(() => loadProjects(), "Update posted, but the project list could not refresh.");
+  return `Bark! Posted that update to ${project.name}.`;
+}
+
+async function axleAddPart(action) {
+  const project = state.projects.find((item) => String(item.id) === String(action.data.projectId));
+  if (!project) return "Bark! I cannot find that project anymore. Please start the part again.";
+
+  const payload = {
+    project_id: project.id,
+    category: action.data.category || "OTHER",
+    name: action.data.name,
+    cost: Math.max(0, Number(action.data.cost) || 0),
+    install_date: action.data.installDate || null,
+    source: action.data.source || null,
+    link: action.data.link || null,
+    notes: action.data.notes || null,
+  };
+
+  if (!logged()) {
+    project.parts = Array.isArray(project.parts) ? project.parts : [];
+    project.parts.push({ id: uid(), ...payload, created_at: new Date().toISOString() });
+    project.updated_at = new Date().toISOString();
+    return `Bark! Added ${payload.name} to ${project.name} for this guest session.`;
+  }
+  if (!state.supabase) return "Bark! RELAY is not connected to the database right now.";
+
+  const result = await safe(async () => {
+    const query = await state.supabase.from("parts").insert(payload).select().single();
+    if (query.error) throw query.error;
+    return query.data;
+  }, "Could not save this part.");
+  if (!result) return "Bark! I could not save that part. Try the command again in a moment.";
+  await touch(project.id);
+  await safe(() => loadProjects(), "Part saved, but the project list could not refresh.");
+  return `Bark! Added ${payload.name} to ${project.name} under ${payload.category}.`;
+}
+
+async function handleAxleSiteAction(message) {
+  const text = normalizeAxleMessage(message);
+  if (state.axleAction && axleHasAny(text, "cancel", "stop", "never mind", "nevermind")) {
+    state.axleAction = null;
+    return "Bark! Cancelled. Nothing was changed.";
+  }
+
+  if (!state.axleAction) {
+    if (axleHasAny(text, "add objective", "create objective", "new objective", "plan objective", "add an objective", "create an objective")) {
+      return startAxleAction("objective", message);
+    }
+    if (axleHasAny(text, "post update", "post to project", "add post", "new post", "project update", "post an update", "add build log", "build log post")) {
+      return startAxleAction("post", message);
+    }
+    if (axleHasAny(text, "add part", "add a part", "new part", "log part", "install part")) {
+      return startAxleAction("part", message);
+    }
+    return null;
+  }
+
+  const action = state.axleAction;
+  if (action.step === "project") {
+    const project = axleProjectByReply(message);
+    if (!project) return axleProjectListText("I could not match that project. Reply with a project name or number:");
+    return axleSelectProject(action, project);
+  }
+
+  if (action.type === "objective") {
+    if (action.step === "objective_name") {
+      const value = String(message || "").trim();
+      if (!value) return "What should the objective be called?";
+      action.data.objectiveName = value.slice(0, 160);
+      action.step = "objective_deadline";
+      return axleActionNextPrompt(action);
+    }
+    if (action.step === "objective_deadline") {
+      const date = axleDateValue(message);
+      if (!date) return "I could not read that deadline. Use YYYY-MM-DD, MM/DD/YYYY, today, or tomorrow.";
+      action.data.deadline = date;
+      action.step = "objective_notes";
+      return axleActionNextPrompt(action);
+    }
+    if (action.step === "objective_notes") {
+      action.data.notes = axleOptionalText(message);
+      state.axleAction = null;
+      return axleCreateObjective(action);
+    }
+  }
+
+  if (action.type === "post" && action.step === "post_text") {
+    const value = String(message || "").trim();
+    if (!value) return axleActionNextPrompt(action);
+    action.data.text = value.slice(0, 3000);
+    state.axleAction = null;
+    return axlePostUpdate(action);
+  }
+
+  if (action.type === "part") {
+    if (action.step === "part_name") {
+      const value = String(message || "").trim();
+      if (!value) return "What is the part name?";
+      action.data.name = value.slice(0, 160);
+      action.step = "part_cost";
+      return axleActionNextPrompt(action);
+    }
+    if (action.step === "part_cost") {
+      const raw = String(message || "").replace(/[$,]/g, "").trim();
+      const value = Number(raw);
+      if (!Number.isFinite(value) || value < 0) return "Enter the cost as a positive number, such as 249.99, or enter 0.";
+      action.data.cost = value;
+      action.step = "part_category";
+      return axleActionNextPrompt(action);
+    }
+    if (action.step === "part_category") {
+      const category = axlePartCategory(message);
+      if (!category) return `I could not match that category. Choose one of: ${CATEGORIES.join(", ")}.`;
+      action.data.category = category;
+      action.step = "part_date";
+      return axleActionNextPrompt(action);
+    }
+    if (action.step === "part_date") {
+      const date = axleDateValue(message, { allowSkip: true });
+      if (date === undefined) return "I could not read that install date. Use YYYY-MM-DD, MM/DD/YYYY, today, tomorrow, or type skip.";
+      action.data.installDate = date;
+      action.step = "part_notes";
+      return axleActionNextPrompt(action);
+    }
+    if (action.step === "part_notes") {
+      action.data.notes = axleOptionalText(message);
+      action.step = "part_source";
+      return axleActionNextPrompt(action);
+    }
+    if (action.step === "part_source") {
+      action.data.source = axleOptionalText(message);
+      action.step = "part_link";
+      return axleActionNextPrompt(action);
+    }
+    if (action.step === "part_link") {
+      const link = axleOptionalText(message);
+      if (link) {
+        try {
+          new URL(link);
+        } catch {
+          return "That does not look like a valid URL. Paste a full link beginning with http:// or https://, or type skip.";
+        }
+      }
+      action.data.link = link;
+      state.axleAction = null;
+      return axleAddPart(action);
+    }
+  }
+
+  state.axleAction = null;
+  return "Bark! I lost track of that action, so I cancelled it without changing anything. Please try again.";
+}
+
+function axleLocalReply(message) {
+  const text = normalizeAxleMessage(message);
+  const hasAny = (...phrases) => axleHasAny(text, ...phrases);
 
   if (hasAny("hello", "hi", "hey", "hiya", "howdy", "yo", "good morning", "good afternoon", "good evening")) {
     return "Bark! I’m AXLE!";
   }
 
   if (hasAny("what can you do", "what do you do", "how can you help", "help me", "your abilities", "your features", "what are your capabilities")) {
-    return "Bark! I’m your personal assistant. I can help you with project management. Currently I’m limited, but in the future I will be able to help you with all aspects of the site.";
+    return "Bark! I can now work with your RELAY projects. Ask me to add an objective, post a project update, or add a part. I can also answer simple questions about projects, parts, timelines, and RELAY. I still do not use an LLM yet.";
   }
 
   if (hasAny("who are you", "what are you", "tell me about yourself", "your name")) {
-    return "Bark! I’m AXLE, RELAY’s AI shop dog. Right now I’m a simple assistant, but I’m being built to help keep your projects organized.";
+    return "Bark! I’m AXLE, RELAY’s AI shop dog. I’m still a local rules-based assistant, but I can now make a few real changes to your projects.";
   }
 
   if (hasAny("project", "build plan", "plan my build", "next objective", "next step", "what should i do next")) {
-    return "Bark! I can help you think through project goals and next steps. For now I can only offer simple guidance, but future AXLE versions will be able to work directly with your RELAY projects.";
+    return "Bark! I can work with project data now. Try “add an objective,” “post an update,” or “add a part.”";
   }
 
   if (hasAny("part", "parts", "budget", "cost", "money", "spend")) {
-    return "Bark! Parts and budgets are important to track. RELAY can already store your parts and costs, and future AXLE versions will be able to help organize and review that information with you.";
+    return "Bark! I can add parts directly to a project. Say “add a part” and I’ll walk you through the part name, cost, category, install date, notes, and source.";
   }
 
   if (hasAny("timeline", "deadline", "objective", "objectives", "schedule", "planning mode")) {
-    return "Bark! RELAY’s Timeline and Planning Mode are built for objectives and deadlines. In a future version, I’ll be able to help turn your ideas into planned tasks.";
+    return "Bark! I can add objectives to your signed-in projects. Say “add an objective” and I’ll ask for the project, task, deadline, and optional notes.";
   }
 
   if (hasAny("connect", "community", "public build", "share my build")) {
-    return "Bark! Connect is where public RELAY builds can be shared and explored. I’m not connected to community data yet, but that can be added later.";
+    return "Bark! Connect is where public RELAY builds can be shared and explored. I’m not connected to community browsing yet.";
   }
 
   if (hasAny("thank you", "thanks", "thx", "appreciate it")) {
@@ -367,7 +708,7 @@ function axleLocalReply(message) {
     return "Bark! See you in the garage!";
   }
 
-  return "Bark! I’m still learning that one. Try asking what I can do, or ask me about projects, parts, objectives, timelines, or RELAY.";
+  return "Bark! I’m still learning that one. Try “add an objective,” “post an update,” “add a part,” or ask what I can do.";
 }
 
 function axleContext() {
@@ -375,15 +716,23 @@ function axleContext() {
     signedIn: logged(),
     username: logged() ? homepageUsername() : "Guest",
     projectCount: state.projects.length,
+    projects: state.projects.map((project) => ({ id: project.id, name: project.name })),
     currentProjectId: state.currentProjectId || null,
+    pendingAction: state.axleAction ? { type: state.axleAction.type, step: state.axleAction.step } : null,
   };
 }
 
 async function requestAxleReply(message) {
+  // Site actions are handled locally and deterministically so AXLE can safely
+  // modify RELAY even before an LLM is connected.
+  const actionReply = await handleAxleSiteAction(message);
+  if (actionReply) return actionReply;
+
   // Future LLM integration point:
   // Assign an async function to window.RELAY_AXLE_PROVIDER. It will receive the
   // newest message, the current AXLE conversation, and lightweight RELAY context.
-  // If no provider exists, AXLE remains fully local and uses the rules below.
+  // Direct site actions above remain local so a future provider does not need
+  // database credentials or permission to write directly.
   const provider = window.RELAY_AXLE_PROVIDER;
   if (typeof provider === "function") {
     try {
@@ -407,10 +756,10 @@ async function requestAxleReply(message) {
 
 function axleSuggestions() {
   return [
-    "Hello",
+    "Add an objective",
+    "Post an update",
+    "Add a part",
     "What can you do?",
-    "Help me plan my build",
-    "Tell me about objectives",
   ];
 }
 
@@ -430,12 +779,12 @@ function renderAxle() {
 
   main.innerHTML = `<section class="page axle-page ${started ? "started" : "intro"}">
     <div class="axle-shell">
-      ${started ? `<header class="axle-chat-header"><img class="axle-header-avatar" src="${AXLE_ICON}" alt="AXLE"><div><p class="eyebrow">AI SHOP DOG</p><h1>AXLE</h1><p class="muted">Work in progress · simple local responses only</p></div></header>${axleConversationMarkup()}` : `<div class="axle-intro"><img class="axle-intro-avatar" src="${AXLE_ICON}" alt="AXLE, the RELAY shop dog"><p class="eyebrow">MEET AXLE</p><h1>AXLE</h1><p>This is AXLE your AI shop dog. He is a work in progress, please be patient.</p><div class="axle-prompt-card"><h2>How can AXLE help?</h2><p class="muted">Start with a simple question about RELAY, your projects, parts, objectives, or planning.</p><div class="axle-suggestions">${suggestions.map((text) => `<button type="button" class="axle-suggestion" data-axle-prompt="${esc(text)}">${esc(text)}</button>`).join("")}</div></div></div>`}
+      ${started ? `<header class="axle-chat-header"><img class="axle-header-avatar" src="${AXLE_ICON}" alt="AXLE"><div><p class="eyebrow">AI SHOP DOG</p><h1>AXLE</h1><p class="muted">Project actions enabled · no LLM yet</p></div></header>${axleConversationMarkup()}` : `<div class="axle-intro"><img class="axle-intro-avatar" src="${AXLE_ICON}" alt="AXLE, the RELAY shop dog"><p class="eyebrow">MEET AXLE</p><h1>AXLE</h1><p>This is AXLE your AI shop dog. He is a work in progress, please be patient.</p><div class="axle-prompt-card"><h2>How can AXLE help?</h2><p class="muted">AXLE can add objectives, post project updates, and add parts. He can also answer simple questions about RELAY.</p><div class="axle-suggestions">${suggestions.map((text) => `<button type="button" class="axle-suggestion" data-axle-prompt="${esc(text)}">${esc(text)}</button>`).join("")}</div></div></div>`}
       <form id="axleForm" class="axle-composer" autocomplete="off">
         <textarea id="axleInput" rows="1" maxlength="1200" placeholder="Message AXLE…" aria-label="Message AXLE" ${state.axleBusy ? "disabled" : ""}></textarea>
         <button type="submit" class="button primary axle-send" ${state.axleBusy ? "disabled" : ""}>Send</button>
       </form>
-      <p class="axle-disclaimer muted">AXLE is currently a demo framework and does not use an LLM yet.</p>
+      <p class="axle-disclaimer muted">AXLE uses local guided actions right now. An LLM can still be connected later through RELAY_AXLE_PROVIDER.</p>
     </div>
   </section>`;
 
@@ -476,14 +825,35 @@ async function sendAxleMessage(message) {
   state.axleBusy = true;
   renderAxle();
 
-  // A short delay makes the local demo feel conversational while keeping this
-  // function asynchronous so a future network/LLM provider can drop in cleanly.
-  await new Promise((resolve) => setTimeout(resolve, 360));
+  // A short delay keeps the local workflow conversational while preserving the
+  // asynchronous seam for a future network/LLM provider.
+  await new Promise((resolve) => setTimeout(resolve, 260));
   const reply = await requestAxleReply(clean);
   state.axleMessages.push({ role: "assistant", content: reply });
   state.axleBusy = false;
 
   if (location.hash.replace(/^#\/?/, "") === "axle") renderAxle();
+}
+
+function showAxleCompletionBanner(message = "Bark! Good Job Completing that!") {
+  document.querySelector(".axle-completion-banner")?.remove();
+  clearTimeout(axleBannerTimer);
+
+  const banner = document.createElement("div");
+  banner.className = "axle-completion-banner";
+  banner.setAttribute("role", "status");
+  banner.setAttribute("aria-live", "polite");
+  banner.innerHTML = `<img class="axle-completion-banner-avatar" src="${AXLE_ICON}" alt="AXLE"><div class="axle-completion-banner-copy"><span>AXLE</span><strong>${esc(message)}</strong></div><button type="button" class="axle-completion-banner-close" aria-label="Dismiss AXLE notification">×</button>`;
+  document.body.appendChild(banner);
+
+  const dismiss = () => {
+    if (!banner.isConnected) return;
+    banner.classList.remove("show");
+    setTimeout(() => banner.remove(), 220);
+  };
+  banner.querySelector(".axle-completion-banner-close")?.addEventListener("click", dismiss);
+  requestAnimationFrame(() => banner.classList.add("show"));
+  axleBannerTimer = setTimeout(dismiss, 5200);
 }
 
 function renderHome(){main.innerHTML=`<section class="hero"><div class="hero-inner"><p class="eyebrow">CAR PROJECT ORGANIZER</p><h1>Build the car.<br>Keep the story.</h1><p>One workspace for parts, costs, installation dates, build notes, and the decisions that turn a project car into your project car.</p><button class="button primary" data-route="projects">Take me to the editor</button><p class="muted" style="font-size:.82rem;margin-top:18px">${logged()?`Signed in as ${esc(state.profile?.username||state.user.email)}`:"Guest editor — changes disappear on refresh"}</p></div></section>`}
@@ -624,6 +994,7 @@ async function completeHomepageObjective(objectiveId,projectId,button){
   return;
  }
  await touch(projectId);
+ showAxleCompletionBanner("Bark! Good Job Completing that!");
  notify("Objective completed and added to your build log.");
  await loadHomepageObjectives();
  loadHomepageCommunity();
@@ -1076,6 +1447,7 @@ async function completeObjective(objectiveId){
  },"Could not mark this objective as completed.");
  if(result===null)return;
  await touch(state.timelineProjectId);
+ showAxleCompletionBanner("Bark! Good Job Completing that!");
  notify("Objective completed and added to your build log.");
  renderTimeline();
 }
