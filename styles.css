@@ -384,3 +384,20 @@ main{width:min(1180px,90vw);margin:0 auto}.hero{min-height:calc(100vh - 68px);di
  .axle-composer{grid-template-columns:1fr}
  .axle-send{width:100%}
 }
+
+/* AXLE objective completion banner */
+.axle-completion-banner{position:fixed;left:50%;top:84px;z-index:80;width:min(560px,calc(100vw - 28px));display:grid;grid-template-columns:72px minmax(0,1fr) 34px;align-items:center;gap:14px;padding:12px 14px 12px 12px;border:1px solid rgba(255,106,0,.42);border-radius:18px;background:rgba(23,24,28,.96);box-shadow:0 24px 70px rgba(0,0,0,.48),0 0 0 1px rgba(255,106,0,.08);backdrop-filter:blur(18px) saturate(140%);opacity:0;transform:translate(-50%,-18px) scale(.98);pointer-events:none;transition:opacity .22s ease,transform .22s ease}
+.axle-completion-banner.show{opacity:1;transform:translate(-50%,0) scale(1);pointer-events:auto}
+.axle-completion-banner-avatar{width:72px;height:72px;display:block;object-fit:contain;filter:drop-shadow(0 10px 18px rgba(0,0,0,.3))}
+.axle-completion-banner-copy{min-width:0;display:grid;gap:2px}
+.axle-completion-banner-copy span{color:var(--accent2);font-size:.7rem;font-weight:850;letter-spacing:.14em}
+.axle-completion-banner-copy strong{font-size:1.02rem;line-height:1.3;letter-spacing:-.01em}
+.axle-completion-banner-close{width:32px;height:32px;border:0;border-radius:50%;background:rgba(255,255,255,.07);color:var(--muted);font-size:1.15rem;line-height:1}
+.axle-completion-banner-close:hover,.axle-completion-banner-close:focus-visible{background:rgba(255,255,255,.12);color:var(--text);outline:none}
+
+@media(max-width:600px){
+ .axle-completion-banner{top:76px;grid-template-columns:58px minmax(0,1fr) 30px;gap:10px;padding:10px}
+ .axle-completion-banner-avatar{width:58px;height:58px}
+ .axle-completion-banner-copy strong{font-size:.93rem}
+ .axle-completion-banner-close{width:30px;height:30px}
+}
