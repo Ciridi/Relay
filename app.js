@@ -45,6 +45,8 @@
     timelineProjectId: null,
     timelineMode: "view",
     homepageClockTimer: null,
+    axleMessages: [],
+    axleBusy: false,
   };
 
   const $ = (selector) => document.querySelector(selector);
@@ -283,6 +285,8 @@ function render(){
   renderConnect();
  }else if(h==="timeline"){
   renderTimeline();
+ }else if(h==="axle"){
+  renderAxle();
  }else if(h==="home"){
   if(logged())renderHomepage();
   else renderHome();
@@ -302,6 +306,186 @@ function render(){
  }
  main.focus({preventScroll:true});
 }
+
+// ---------------------------------------------------------------------------
+// AXLE chatbot framework
+// ---------------------------------------------------------------------------
+
+const AXLE_ICON = "animation.gif";
+
+function normalizeAxleMessage(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[’']/g, "")
+    .replace(/[^a-z0-9\s?]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function axleLocalReply(message) {
+  const text = normalizeAxleMessage(message);
+
+  const hasAny = (...phrases) => phrases.some((phrase) => {
+    if (text === phrase) return true;
+    if (phrase.includes(" ")) return text.includes(phrase);
+    return text.split(/\s+/).includes(phrase);
+  });
+
+  if (hasAny("hello", "hi", "hey", "hiya", "howdy", "yo", "good morning", "good afternoon", "good evening")) {
+    return "Bark! I’m AXLE!";
+  }
+
+  if (hasAny("what can you do", "what do you do", "how can you help", "help me", "your abilities", "your features", "what are your capabilities")) {
+    return "Bark! I’m your personal assistant. I can help you with project management. Currently I’m limited, but in the future I will be able to help you with all aspects of the site.";
+  }
+
+  if (hasAny("who are you", "what are you", "tell me about yourself", "your name")) {
+    return "Bark! I’m AXLE, RELAY’s AI shop dog. Right now I’m a simple assistant, but I’m being built to help keep your projects organized.";
+  }
+
+  if (hasAny("project", "build plan", "plan my build", "next objective", "next step", "what should i do next")) {
+    return "Bark! I can help you think through project goals and next steps. For now I can only offer simple guidance, but future AXLE versions will be able to work directly with your RELAY projects.";
+  }
+
+  if (hasAny("part", "parts", "budget", "cost", "money", "spend")) {
+    return "Bark! Parts and budgets are important to track. RELAY can already store your parts and costs, and future AXLE versions will be able to help organize and review that information with you.";
+  }
+
+  if (hasAny("timeline", "deadline", "objective", "objectives", "schedule", "planning mode")) {
+    return "Bark! RELAY’s Timeline and Planning Mode are built for objectives and deadlines. In a future version, I’ll be able to help turn your ideas into planned tasks.";
+  }
+
+  if (hasAny("connect", "community", "public build", "share my build")) {
+    return "Bark! Connect is where public RELAY builds can be shared and explored. I’m not connected to community data yet, but that can be added later.";
+  }
+
+  if (hasAny("thank you", "thanks", "thx", "appreciate it")) {
+    return "Bark! You got it! I’m always happy to hang around the shop.";
+  }
+
+  if (hasAny("bye", "goodbye", "see you", "later")) {
+    return "Bark! See you in the garage!";
+  }
+
+  return "Bark! I’m still learning that one. Try asking what I can do, or ask me about projects, parts, objectives, timelines, or RELAY.";
+}
+
+function axleContext() {
+  return {
+    signedIn: logged(),
+    username: logged() ? homepageUsername() : "Guest",
+    projectCount: state.projects.length,
+    currentProjectId: state.currentProjectId || null,
+  };
+}
+
+async function requestAxleReply(message) {
+  // Future LLM integration point:
+  // Assign an async function to window.RELAY_AXLE_PROVIDER. It will receive the
+  // newest message, the current AXLE conversation, and lightweight RELAY context.
+  // If no provider exists, AXLE remains fully local and uses the rules below.
+  const provider = window.RELAY_AXLE_PROVIDER;
+  if (typeof provider === "function") {
+    try {
+      const response = await provider({
+        message,
+        history: state.axleMessages.map(({ role, content }) => ({ role, content })),
+        context: axleContext(),
+      });
+      const content = typeof response === "string" ? response : response?.content;
+      if (content && String(content).trim()) {
+        const clean = String(content).trim();
+        return /^bark!/i.test(clean) ? clean : `Bark! ${clean}`;
+      }
+    } catch (error) {
+      console.error("AXLE provider failed; falling back to local responses.", error);
+    }
+  }
+
+  return axleLocalReply(message);
+}
+
+function axleSuggestions() {
+  return [
+    "Hello",
+    "What can you do?",
+    "Help me plan my build",
+    "Tell me about objectives",
+  ];
+}
+
+function axleMessageMarkup(message) {
+  const assistant = message.role === "assistant";
+  return `<div class="axle-message-row ${assistant ? "assistant" : "user"}">${assistant ? `<img class="axle-message-avatar" src="${AXLE_ICON}" alt="AXLE">` : ""}<div class="axle-message ${assistant ? "assistant" : "user"}">${esc(message.content)}</div></div>`;
+}
+
+function axleConversationMarkup() {
+  if (!state.axleMessages.length) return "";
+  return `<div class="axle-chat-log" id="axleChatLog" aria-live="polite">${state.axleMessages.map(axleMessageMarkup).join("")}${state.axleBusy ? `<div class="axle-message-row assistant axle-typing-row"><img class="axle-message-avatar" src="${AXLE_ICON}" alt=""><div class="axle-message assistant axle-typing" aria-label="AXLE is typing"><span></span><span></span><span></span></div></div>` : ""}</div>`;
+}
+
+function renderAxle() {
+  const started = state.axleMessages.length > 0;
+  const suggestions = axleSuggestions();
+
+  main.innerHTML = `<section class="page axle-page ${started ? "started" : "intro"}">
+    <div class="axle-shell">
+      ${started ? `<header class="axle-chat-header"><img class="axle-header-avatar" src="${AXLE_ICON}" alt="AXLE"><div><p class="eyebrow">AI SHOP DOG</p><h1>AXLE</h1><p class="muted">Work in progress · simple local responses only</p></div></header>${axleConversationMarkup()}` : `<div class="axle-intro"><img class="axle-intro-avatar" src="${AXLE_ICON}" alt="AXLE, the RELAY shop dog"><p class="eyebrow">MEET AXLE</p><h1>AXLE</h1><p>This is AXLE your AI shop dog. He is a work in progress, please be patient.</p><div class="axle-prompt-card"><h2>How can AXLE help?</h2><p class="muted">Start with a simple question about RELAY, your projects, parts, objectives, or planning.</p><div class="axle-suggestions">${suggestions.map((text) => `<button type="button" class="axle-suggestion" data-axle-prompt="${esc(text)}">${esc(text)}</button>`).join("")}</div></div></div>`}
+      <form id="axleForm" class="axle-composer" autocomplete="off">
+        <textarea id="axleInput" rows="1" maxlength="1200" placeholder="Message AXLE…" aria-label="Message AXLE" ${state.axleBusy ? "disabled" : ""}></textarea>
+        <button type="submit" class="button primary axle-send" ${state.axleBusy ? "disabled" : ""}>Send</button>
+      </form>
+      <p class="axle-disclaimer muted">AXLE is currently a demo framework and does not use an LLM yet.</p>
+    </div>
+  </section>`;
+
+  $("#axleForm")?.addEventListener("submit", submitAxleMessage);
+  $("#axleInput")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
+    }
+  });
+  document.querySelectorAll("[data-axle-prompt]").forEach((button) => {
+    button.addEventListener("click", () => sendAxleMessage(button.dataset.axlePrompt || ""));
+  });
+
+  if (started) {
+    requestAnimationFrame(() => {
+      const log = $("#axleChatLog");
+      if (log) log.scrollTop = log.scrollHeight;
+      $("#axleInput")?.focus({ preventScroll: true });
+    });
+  }
+}
+
+async function submitAxleMessage(event) {
+  event.preventDefault();
+  const input = $("#axleInput");
+  const message = input?.value.trim() || "";
+  if (!message || state.axleBusy) return;
+  if (input) input.value = "";
+  await sendAxleMessage(message);
+}
+
+async function sendAxleMessage(message) {
+  const clean = String(message || "").trim();
+  if (!clean || state.axleBusy) return;
+
+  state.axleMessages.push({ role: "user", content: clean });
+  state.axleBusy = true;
+  renderAxle();
+
+  // A short delay makes the local demo feel conversational while keeping this
+  // function asynchronous so a future network/LLM provider can drop in cleanly.
+  await new Promise((resolve) => setTimeout(resolve, 360));
+  const reply = await requestAxleReply(clean);
+  state.axleMessages.push({ role: "assistant", content: reply });
+  state.axleBusy = false;
+
+  if (location.hash.replace(/^#\/?/, "") === "axle") renderAxle();
+}
+
 function renderHome(){main.innerHTML=`<section class="hero"><div class="hero-inner"><p class="eyebrow">CAR PROJECT ORGANIZER</p><h1>Build the car.<br>Keep the story.</h1><p>One workspace for parts, costs, installation dates, build notes, and the decisions that turn a project car into your project car.</p><button class="button primary" data-route="projects">Take me to the editor</button><p class="muted" style="font-size:.82rem;margin-top:18px">${logged()?`Signed in as ${esc(state.profile?.username||state.user.email)}`:"Guest editor — changes disappear on refresh"}</p></div></section>`}
 
 function homepageUsername(){
