@@ -332,3 +332,54 @@ main{width:min(1180px,90vw);margin:0 auto}.hero{min-height:calc(100vh - 68px);di
  .homepage-objective-complete{opacity:1;transform:none;pointer-events:auto;width:100%}
  .homepage-quick-update-actions .button{width:100%}
 }
+
+
+/* AXLE chatbot */
+.axle-page{padding-top:38px;min-height:calc(100vh - 68px)}
+.axle-shell{width:min(880px,100%);min-height:calc(100vh - 150px);margin:0 auto;display:flex;flex-direction:column}
+.axle-intro{margin:auto 0 26px;text-align:center}
+.axle-intro-avatar{display:block;width:240px;height:240px;margin:4px auto 22px;image-rendering:auto;object-fit:contain;filter:drop-shadow(0 18px 42px rgba(0,0,0,.35))}
+.axle-intro .eyebrow{margin-bottom:5px}
+.axle-intro h1{margin:0;font-size:clamp(3.4rem,9vw,6.5rem);line-height:.92;letter-spacing:-.065em}
+.axle-intro>p:not(.eyebrow){max-width:620px;margin:18px auto 28px;color:var(--muted);font-size:1rem}
+.axle-prompt-card{width:min(680px,100%);margin:0 auto;padding:22px;border:1px solid var(--line);border-radius:20px;background:rgba(255,255,255,.035);box-shadow:var(--shadow);text-align:left}
+.axle-prompt-card h2{margin:0 0 4px;font-size:1.08rem}
+.axle-prompt-card p{margin:0 0 16px;font-size:.88rem}
+.axle-suggestions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.axle-suggestion{padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.035);color:var(--text);text-align:left;transition:background .16s,border-color .16s,transform .16s}
+.axle-suggestion:hover,.axle-suggestion:focus-visible{background:rgba(255,106,0,.09);border-color:rgba(255,106,0,.36);outline:none;transform:translateY(-1px)}
+.axle-chat-header{display:flex;align-items:center;gap:14px;padding:4px 2px 18px;border-bottom:1px solid var(--line)}
+.axle-header-avatar{width:56px;height:56px;flex:0 0 auto;object-fit:contain}
+.axle-chat-header .eyebrow{margin:0 0 2px}
+.axle-chat-header h1{margin:0;font-size:1.7rem;line-height:1;letter-spacing:-.04em}
+.axle-chat-header p.muted{margin:5px 0 0;font-size:.8rem}
+.axle-chat-log{flex:1;min-height:380px;max-height:calc(100vh - 300px);overflow:auto;padding:24px 4px 12px;scroll-behavior:smooth}
+.axle-message-row{display:flex;gap:9px;margin:0 0 18px;align-items:flex-end}
+.axle-message-row.user{justify-content:flex-end}
+.axle-message-avatar{width:34px;height:34px;flex:0 0 auto;object-fit:contain}
+.axle-message{max-width:min(680px,82%);padding:11px 14px;border-radius:16px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.48;font-size:.94rem}
+.axle-message.assistant{border:1px solid var(--line);border-bottom-left-radius:5px;background:rgba(255,255,255,.045)}
+.axle-message.user{border-bottom-right-radius:5px;background:var(--accent);color:#111;font-weight:650}
+.axle-composer{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end;padding:12px;border:1px solid var(--line);border-radius:18px;background:#17181c;box-shadow:0 18px 60px rgba(0,0,0,.28)}
+.axle-composer textarea{min-height:46px;max-height:150px;padding:11px 12px;resize:vertical;border:0;background:transparent;box-shadow:none}
+.axle-composer textarea:focus{border:0;box-shadow:none}
+.axle-send{min-width:86px;min-height:44px}
+.axle-send:disabled,.axle-composer textarea:disabled{opacity:.55;cursor:not-allowed}
+.axle-disclaimer{margin:9px 4px 0;text-align:center;font-size:.72rem}
+.axle-typing{display:flex;align-items:center;gap:5px;min-width:60px;padding-block:14px}
+.axle-typing span{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.35;animation:axleTyping .95s ease-in-out infinite}
+.axle-typing span:nth-child(2){animation-delay:.12s}
+.axle-typing span:nth-child(3){animation-delay:.24s}
+@keyframes axleTyping{0%,60%,100%{transform:translateY(0);opacity:.28}30%{transform:translateY(-4px);opacity:.8}}
+
+@media(max-width:760px){
+ .topnav .axle-nav{display:block!important}
+ .axle-page{padding-top:26px}
+ .axle-shell{min-height:calc(100vh - 120px)}
+ .axle-intro-avatar{width:192px;height:192px}
+ .axle-suggestions{grid-template-columns:1fr}
+ .axle-chat-log{max-height:calc(100vh - 282px);padding-inline:0}
+ .axle-message{max-width:88%}
+ .axle-composer{grid-template-columns:1fr}
+ .axle-send{width:100%}
+}
